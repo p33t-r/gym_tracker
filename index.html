@@ -133,21 +133,29 @@
       <!-- Wykresy -->
       <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <!-- Wykres Tonażu Sumarycznego -->
-        <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 sm:p-6">
-          <h3 class="text-base font-bold text-slate-200 mb-1">Całkowity Tonaż (kg)</h3>
-          <p class="text-xs text-slate-400 mb-4">Skumulowana objętość w czasie według grup lub ćwiczeń</p>
-          <div class="relative h-64 sm:h-80">
-            <canvas id="tonnageChart"></canvas>
+        <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 sm:p-6 flex flex-col justify-between">
+          <div>
+            <h3 class="text-base font-bold text-slate-200 mb-1">Całkowity Tonaż (kg)</h3>
+            <p class="text-xs text-slate-400 mb-4">Skumulowana objętość w czasie według grup lub ćwiczeń</p>
+            <div class="relative h-64 sm:h-80">
+              <canvas id="tonnageChart"></canvas>
+            </div>
           </div>
+          <!-- Zestawienie tonażu i udziału powtórzeń -->
+          <div id="tonnageProgressText" class="mt-4 pt-3 border-t border-slate-800 text-xs text-slate-300 font-medium"></div>
         </div>
 
         <!-- Wykres Progresu w Ćwiczeniu -->
-        <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 sm:p-6">
-          <h3 class="text-base font-bold text-slate-200 mb-1">Progres w Seriach & Obciążeniu</h3>
-          <p class="text-xs text-slate-400 mb-4">Maksymalny ciężar, objętość i liczba powtórzeń</p>
-          <div class="relative h-64 sm:h-80">
-            <canvas id="exerciseProgressChart"></canvas>
+        <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 sm:p-6 flex flex-col justify-between">
+          <div>
+            <h3 class="text-base font-bold text-slate-200 mb-1">Progres w Seriach & Obciążeniu</h3>
+            <p class="text-xs text-slate-400 mb-4">Maksymalny ciężar, objętość i liczba powtórzeń</p>
+            <div class="relative h-64 sm:h-80">
+              <canvas id="exerciseProgressChart"></canvas>
+            </div>
           </div>
+          <!-- Tekstowe podsumowanie progresu ćwiczenia -->
+          <div id="exerciseProgressText" class="mt-4 pt-3 border-t border-slate-800 text-xs text-slate-300 font-medium space-y-1"></div>
         </div>
       </div>
 
@@ -1039,6 +1047,17 @@
       return logs;
     }
 
+    function helperCalcPct(firstVal, lastVal) {
+      if (firstVal === 0) {
+        if (lastVal > 0) return { pct: 100, str: '+100%' };
+        return { pct: 0, str: '0%' };
+      }
+      const diff = ((lastVal - firstVal) / firstVal) * 100;
+      const roundPct = Math.round(diff * 10) / 10;
+      const str = (roundPct > 0 ? '+' : '') + roundPct + '%';
+      return { pct: roundPct, str: str };
+    }
+
     function updateAnalytics() {
       const logs = getFilteredLogs();
       const muscleFilter = document.getElementById('filter-muscle').value;
@@ -1051,11 +1070,16 @@
 
     function renderTonnageChart(logs, muscleFilter, exFilter) {
       const ctx = document.getElementById('tonnageChart').getContext('2d');
+      const progressTextEl = document.getElementById('tonnageProgressText');
       if (tonnageChartInstance) tonnageChartInstance.destroy();
 
       const dateSet = new Set();
       const stackData = {};
       const stackKeysSet = new Set();
+
+      const stackTonnage = {};
+      const stackReps = {};
+      let grandTotalReps = 0;
 
       logs.forEach(log => {
         log.exercises.forEach(ex => {
@@ -1064,7 +1088,8 @@
           if (exFilter !== 'all' && ex.exerciseId !== exFilter) return;
 
           const exVol = ex.sets.reduce((sum, s) => sum + ((parseFloat(s.weight)||0) * (parseInt(s.reps)||0)), 0);
-          if (exVol <= 0) return;
+          const exReps = ex.sets.reduce((sum, s) => sum + (parseInt(s.reps)||0), 0);
+          if (exVol <= 0 && exReps <= 0) return;
 
           dateSet.add(log.date);
 
@@ -1073,15 +1098,47 @@
           if (!stackData[stackKey]) stackData[stackKey] = {};
           stackData[stackKey][log.date] = (stackData[stackKey][log.date] || 0) + exVol;
           stackKeysSet.add(stackKey);
+
+          stackTonnage[stackKey] = (stackTonnage[stackKey] || 0) + exVol;
+          stackReps[stackKey] = (stackReps[stackKey] || 0) + exReps;
+          grandTotalReps += exReps;
         });
       });
 
       const dates = Array.from(dateSet).sort((a,b) => new Date(a) - new Date(b));
       const stackKeys = Array.from(stackKeysSet);
 
+      // Renderowanie podsumowania legendy (tonaż i % powtórzeń dla poszczególnych grup)
+      if (stackKeys.length > 0) {
+        let legendHtml = `<div class="flex flex-wrap gap-2 text-xs">`;
+        stackKeys.forEach((key, index) => {
+          const color = STACK_COLORS[index % STACK_COLORS.length];
+          const ton = stackTonnage[key] || 0;
+          const reps = stackReps[key] || 0;
+          const pct = grandTotalReps > 0 ? ((reps / grandTotalReps) * 100).toFixed(1) : '0';
+
+          legendHtml += `
+            <div class="flex items-center gap-2 bg-slate-950 border border-slate-800 px-3 py-1.5 rounded-xl">
+              <span class="w-2.5 h-2.5 rounded-full shrink-0" style="background-color: ${color}"></span>
+              <span class="font-semibold text-slate-200">${key}:</span>
+              <span class="text-indigo-400 font-mono font-bold">${ton} kg</span>
+              <span class="text-slate-400 text-[11px]">(${pct}% powtórzeń)</span>
+            </div>
+          `;
+        });
+        legendHtml += `</div>`;
+        progressTextEl.innerHTML = legendHtml;
+      } else {
+        progressTextEl.innerHTML = `<span class="text-slate-500">Brak danych w wybranym oknie czasowym.</span>`;
+      }
+
       const datasets = stackKeys.map((key, index) => {
+        const ton = stackTonnage[key] || 0;
+        const reps = stackReps[key] || 0;
+        const pct = grandTotalReps > 0 ? ((reps / grandTotalReps) * 100).toFixed(1) : '0';
+
         return {
-          label: key,
+          label: `${key} (${pct}% powt. | ${ton} kg)`,
           data: dates.map(d => stackData[key][d] || 0),
           backgroundColor: STACK_COLORS[index % STACK_COLORS.length],
           borderRadius: 4
@@ -1123,9 +1180,11 @@
 
     function renderExerciseProgressChart(logs, exFilter) {
       const ctx = document.getElementById('exerciseProgressChart').getContext('2d');
+      const progressTextEl = document.getElementById('exerciseProgressText');
       if (progressChartInstance) progressChartInstance.destroy();
 
       if (exFilter === 'all') {
+        progressTextEl.innerHTML = `<span class="text-slate-500">Wybierz konkretne ćwiczenie z filtra, aby sprawdzić progres szczegółowy.</span>`;
         progressChartInstance = new Chart(ctx, {
           type: 'line',
           data: { labels: [], datasets: [] },
@@ -1180,25 +1239,67 @@
         }
       });
 
+      // Kalkulacja szczegółowych statystyk procentowych
+      if (labels.length >= 2) {
+        const firstVol = totalVolumes[0];
+        const lastVol = totalVolumes[totalVolumes.length - 1];
+        const resVol = helperCalcPct(firstVol, lastVol);
+
+        const firstMaxW = maxWeights[0];
+        const lastMaxW = maxWeights[maxWeights.length - 1];
+        const resMaxW = helperCalcPct(firstMaxW, lastMaxW);
+
+        const firstReps = totalRepsList[0];
+        const lastReps = totalRepsList[totalRepsList.length - 1];
+        const resReps = helperCalcPct(firstReps, lastReps);
+
+        const getClass = (pct) => pct > 0 ? 'text-emerald-400' : (pct < 0 ? 'text-red-400' : 'text-slate-300');
+
+        progressTextEl.innerHTML = `
+          <div>Progres tonażu (objętości): <strong class="${getClass(resVol.pct)} font-mono">${resVol.str}</strong> <span class="text-slate-400">(${firstVol} kg ➔ ${lastVol} kg)</span></div>
+          <div>Progres max obciążenia: <strong class="${getClass(resMaxW.pct)} font-mono">${resMaxW.str}</strong> <span class="text-slate-400">(${firstMaxW} kg ➔ ${lastMaxW} kg)</span></div>
+          <div>Progres ilości powtórzeń: <strong class="${getClass(resReps.pct)} font-mono">${resReps.str}</strong> <span class="text-slate-400">(${firstReps} powt. ➔ ${lastReps} powt.)</span></div>
+        `;
+      } else if (labels.length === 1) {
+        progressTextEl.innerHTML = `<span class="text-slate-400">Za mało serii dla tego ćwiczenia w wybranym okresie (wymagane min. 2 sesje).</span>`;
+      } else {
+        progressTextEl.innerHTML = `<span class="text-slate-500">Brak danych dla tego ćwiczenia w wybranym oknie czasowym.</span>`;
+      }
+
+      // Wykres połączony (Combo Chart): Słupki (Tonaż) + Linie (Max Ciężar, Powtórzenia)
       progressChartInstance = new Chart(ctx, {
-        type: 'line',
+        type: 'bar',
         data: {
           labels: labels,
           datasets: [
             {
+              type: 'bar',
+              label: 'Całkowity Tonaż (kg)',
+              data: totalVolumes,
+              backgroundColor: 'rgba(99, 102, 241, 0.35)',
+              borderColor: '#6366f1',
+              borderWidth: 1,
+              borderRadius: 4,
+              yAxisID: 'y1'
+            },
+            {
+              type: 'line',
               label: 'Max Ciężar (kg)',
               data: maxWeights,
               borderColor: '#38bdf8',
               backgroundColor: '#38bdf8',
-              tension: 0.2
+              tension: 0.2,
+              yAxisID: 'y'
             },
             {
-              label: 'Objętość (kg)',
-              data: totalVolumes,
-              borderColor: '#818cf8',
-              backgroundColor: '#818cf8',
+              type: 'line',
+              label: 'Ilość powtórzeń (łącznie)',
+              data: totalRepsList,
+              borderColor: '#34d399',
+              backgroundColor: '#34d399',
+              borderDash: [3, 3],
               tension: 0.2,
-              yAxisID: 'y1'
+              yAxisID: 'y2'
             }
           ]
         },
@@ -1206,14 +1307,21 @@
           responsive: true,
           maintainAspectRatio: false,
           plugins: {
+            legend: {
+              display: true,
+              position: 'bottom',
+              labels: { color: '#94a3b8', boxWidth: 12, font: { size: 11 } }
+            },
             tooltip: {
               callbacks: {
                 label: function(context) {
                   const idx = context.dataIndex;
                   if (context.dataset.label.startsWith('Max Ciężar')) {
-                    return `Max Ciężar: ${context.parsed.y} kg (${maxWeightReps[idx]} powt.)`;
-                  } else if (context.dataset.label.startsWith('Objętość')) {
-                    return `Objętość: ${context.parsed.y} kg (łącznie ${totalRepsList[idx]} powt.)`;
+                    return `Max Ciężar: ${context.parsed.y} kg (${maxWeightReps[idx]} powt. w max serii)`;
+                  } else if (context.dataset.label.startsWith('Całkowity Tonaż')) {
+                    return `Całkowity Tonaż: ${context.parsed.y} kg`;
+                  } else if (context.dataset.label.startsWith('Ilość powtórzeń')) {
+                    return `Łączna ilość powtórzeń: ${context.parsed.y}`;
                   }
                   return context.dataset.label + ': ' + context.parsed.y;
                 },
@@ -1229,8 +1337,26 @@
           },
           scales: {
             x: { ticks: { color: '#94a3b8' }, grid: { color: '#1e293b' } },
-            y: { position: 'left', ticks: { color: '#38bdf8' }, grid: { color: '#1e293b' } },
-            y1: { position: 'right', ticks: { color: '#818cf8' }, grid: { display: false } }
+            y: { 
+              type: 'linear',
+              position: 'left', 
+              ticks: { color: '#38bdf8' }, 
+              grid: { color: '#1e293b' },
+              title: { display: true, text: 'Max Ciężar (kg)', color: '#38bdf8', font: { size: 10 } }
+            },
+            y1: { 
+              type: 'linear',
+              position: 'right', 
+              ticks: { color: '#818cf8' }, 
+              grid: { display: false },
+              title: { display: true, text: 'Tonaż (kg)', color: '#818cf8', font: { size: 10 } }
+            },
+            y2: { 
+              type: 'linear',
+              position: 'right', 
+              display: false,
+              grid: { display: false }
+            }
           }
         }
       });
