@@ -1,0 +1,1416 @@
+<!DOCTYPE html>
+<html lang="pl" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Gym Progress Tracker</title>
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Chart.js do wykresów -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            brand: { 500: '#6366f1', 600: '#4f46e5', 700: '#4338ca' }
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    input::-webkit-outer-spin-button, input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+    input[type=number] { -moz-appearance: textfield; }
+  </style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen font-sans flex flex-col">
+
+  <!-- Header / Nawigacja -->
+  <header class="bg-slate-900 border-b border-slate-800 sticky top-0 z-50">
+    <div class="max-w-7xl mx-auto px-4 py-3 flex flex-wrap justify-between items-center gap-4">
+      <div class="flex items-center space-x-3">
+        <div class="bg-brand-600 p-2 rounded-lg font-bold text-xl">💪</div>
+        <h1 class="text-xl font-bold tracking-wide bg-gradient-to-r from-indigo-400 to-cyan-400 bg-clip-text text-transparent">
+          GymTracker Pro
+        </h1>
+      </div>
+      <nav class="flex flex-wrap gap-1 sm:gap-2 bg-slate-950 p-1 rounded-xl border border-slate-800">
+        <button onclick="switchTab('workout')" id="tab-workout" class="tab-btn px-3 sm:px-4 py-1.5 rounded-lg text-sm font-medium transition-all bg-brand-600 text-white">
+          Dziennik
+        </button>
+        <button onclick="switchTab('analytics')" id="tab-analytics" class="tab-btn px-3 sm:px-4 py-1.5 rounded-lg text-sm font-medium transition-all text-slate-400 hover:text-white">
+          Analityka
+        </button>
+        <button onclick="switchTab('templates')" id="tab-templates" class="tab-btn px-3 sm:px-4 py-1.5 rounded-lg text-sm font-medium transition-all text-slate-400 hover:text-white">
+          Szablony & Baza
+        </button>
+        <button onclick="switchTab('data')" id="tab-data" class="tab-btn px-3 sm:px-4 py-1.5 rounded-lg text-sm font-medium transition-all text-slate-400 hover:text-white">
+          Dane JSON
+        </button>
+      </nav>
+    </div>
+  </header>
+
+  <!-- Ukryty niewidoczny element do wczytywania plików JSON -->
+  <input type="file" id="json-file-input" accept=".json" class="hidden" onchange="handleFileSelect(event)">
+
+  <!-- Główny Kontener -->
+  <main class="max-w-7xl mx-auto px-4 py-6 flex-1 w-full">
+
+    <!-- ZAKŁADKA 1: DZIENNIK TRENINGOWY -->
+    <section id="sec-workout" class="space-y-6">
+      <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 sm:p-6 shadow-xl">
+        <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-6 border-b border-slate-800">
+          <div>
+            <h2 class="text-xl font-bold text-white">Rejestracja Treningu</h2>
+            <p class="text-xs text-slate-400">Wybierz preset lub utwórz trening od zera</p>
+          </div>
+          <div class="flex flex-wrap items-center gap-3">
+            <input type="date" id="workout-date" class="bg-slate-950 border border-slate-700 text-slate-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brand-500">
+            <select id="preset-select" class="bg-slate-950 border border-slate-700 text-slate-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brand-500">
+              <option value="">-- Wybierz szablon --</option>
+            </select>
+            <button onclick="loadPreset()" class="bg-slate-800 hover:bg-slate-700 text-slate-200 px-3 py-2 rounded-lg text-sm font-medium border border-slate-700 transition">
+              Wczytaj Szablon
+            </button>
+          </div>
+        </div>
+
+        <!-- Lista ćwiczeń w treningu -->
+        <div id="workout-exercises-container" class="space-y-6 py-6">
+          <!-- Ćwiczenia generowane dynamicznie -->
+        </div>
+
+        <!-- Akcje dodawania ćwiczenia / zapisu -->
+        <div class="pt-4 border-t border-slate-800 flex flex-col sm:flex-row gap-3 justify-between items-center">
+          <div class="flex gap-2 w-full sm:w-auto">
+            <button onclick="openAddExerciseModal('workout')" class="w-full sm:w-auto bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 px-4 py-2.5 rounded-xl text-sm font-medium transition flex items-center justify-center gap-2">
+              <span>+</span> Dodaj ćwiczenie z bazy
+            </button>
+          </div>
+          <button onclick="saveCurrentWorkout()" class="w-full sm:w-auto bg-brand-600 hover:bg-brand-500 text-white font-semibold px-6 py-2.5 rounded-xl shadow-lg transition">
+            Zapisz Trening
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ZAKŁADKA 2: ANALITYKA I WYKRESY -->
+    <section id="sec-analytics" class="hidden space-y-6">
+      <!-- Filtry -->
+      <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 sm:p-6">
+        <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+          <div>
+            <label class="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Okno Czasowe</label>
+            <select id="time-window" onchange="updateAnalytics()" class="w-full bg-slate-950 border border-slate-700 text-slate-100 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-brand-500">
+              <option value="7">Ostatnie 7 dni</option>
+              <option value="14">Ostatnie 14 dni</option>
+              <option value="30" selected>Ostatnie 30 dni</option>
+              <option value="60">Ostatnie 60 dni</option>
+              <option value="90">Ostatnie 90 dni</option>
+              <option value="180">Pół roku</option>
+              <option value="365">Rok</option>
+              <option value="all">Od początku</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Grupa Mięśniowa</label>
+            <select id="filter-muscle" onchange="updateAnalytics()" class="w-full bg-slate-950 border border-slate-700 text-slate-100 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-brand-500">
+              <option value="all">Wszystkie grupy</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Konkretne Ćwiczenie</label>
+            <select id="filter-exercise" onchange="updateAnalytics()" class="w-full bg-slate-950 border border-slate-700 text-slate-100 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-brand-500">
+              <option value="all">Wszystkie ćwiczenia</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <!-- Wykresy -->
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <!-- Wykres Tonażu Sumarycznego -->
+        <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 sm:p-6">
+          <h3 class="text-base font-bold text-slate-200 mb-1">Całkowity Tonaż (kg)</h3>
+          <p class="text-xs text-slate-400 mb-4">Skumulowana objętość w czasie według grup lub ćwiczeń</p>
+          <div class="relative h-64 sm:h-80">
+            <canvas id="tonnageChart"></canvas>
+          </div>
+        </div>
+
+        <!-- Wykres Progresu w Ćwiczeniu -->
+        <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 sm:p-6">
+          <h3 class="text-base font-bold text-slate-200 mb-1">Progres w Seriach & Obciążeniu</h3>
+          <p class="text-xs text-slate-400 mb-4">Maksymalny ciężar, objętość i liczba powtórzeń</p>
+          <div class="relative h-64 sm:h-80">
+            <canvas id="exerciseProgressChart"></canvas>
+          </div>
+        </div>
+      </div>
+
+      <!-- Historia Treningów -->
+      <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 sm:p-6">
+        <h3 class="text-lg font-bold text-slate-200 mb-4">Zapisana Historia Treningów</h3>
+        <div id="history-list" class="space-y-3">
+          <!-- Renderowana historia -->
+        </div>
+      </div>
+    </section>
+
+    <!-- ZAKŁADKA 3: SZABLONY I BAZA ĆWICZEŃ -->
+    <section id="sec-templates" class="hidden grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <!-- Baza Ćwiczeń -->
+      <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 sm:p-6">
+        <div class="flex justify-between items-center mb-6">
+          <div>
+            <h3 class="text-lg font-bold text-white">Baza Ćwiczeń</h3>
+            <p class="text-xs text-slate-400">Zarządzaj zapisanymi ćwiczeniami</p>
+          </div>
+          <button onclick="openExerciseForm()" class="bg-brand-600 hover:bg-brand-500 text-white text-xs px-3 py-2 rounded-lg font-semibold transition">
+            + Nowe Ćwiczenie
+          </button>
+        </div>
+        <div id="exercise-db-list" class="space-y-3 max-h-[500px] overflow-y-auto pr-1">
+          <!-- Dynamiczna lista ćwiczeń -->
+        </div>
+      </div>
+
+      <!-- Szablony Treningów -->
+      <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 sm:p-6">
+        <div class="flex justify-between items-center mb-6">
+          <div>
+            <h3 class="text-lg font-bold text-white">Szablony Treningowe</h3>
+            <p class="text-xs text-slate-400">Kreator presetów (np. FBW, Push/Pull)</p>
+          </div>
+          <button onclick="openTemplateForm()" class="bg-brand-600 hover:bg-brand-500 text-white text-xs px-3 py-2 rounded-lg font-semibold transition">
+            + Nowy Szablon
+          </button>
+        </div>
+        <div id="template-db-list" class="space-y-3 max-h-[500px] overflow-y-auto pr-1">
+          <!-- Dynamiczna lista szablonów -->
+        </div>
+      </div>
+    </section>
+
+    <!-- ZAKŁADKA 4: IMPORT I EKSPORT DANYCH (JSON) -->
+    <section id="sec-data" class="hidden space-y-6">
+      <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 sm:p-6">
+        <h2 class="text-xl font-bold text-white mb-1">Zarządzanie Danymi (JSON)</h2>
+        <p class="text-xs text-slate-400 mb-6">Eksportuj lub importuj poszczególne sekcje aplikacji lub wykonaj pełny backup.</p>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          
+          <!-- 1. Historia Treningów -->
+          <div class="bg-slate-950 border border-slate-800 p-4 rounded-xl flex flex-col justify-between space-y-4">
+            <div>
+              <div class="text-2xl mb-2">📋</div>
+              <h3 class="font-bold text-sm text-slate-100">Historia Treningów</h3>
+              <p class="text-xs text-slate-500 mt-1">Zapisane logi wykonanych sesji treningowych.</p>
+            </div>
+            <div class="space-y-2">
+              <button onclick="exportData('logs')" class="w-full bg-slate-800 hover:bg-slate-700 text-indigo-300 text-xs py-2 rounded-lg font-medium border border-slate-700 transition">
+                Eksportuj (JSON)
+              </button>
+              <button onclick="triggerImport('logs')" class="w-full bg-slate-900 hover:bg-slate-800 text-slate-300 text-xs py-2 rounded-lg font-medium border border-slate-800 transition">
+                Importuj (JSON)
+              </button>
+            </div>
+          </div>
+
+          <!-- 2. Baza Ćwiczeń -->
+          <div class="bg-slate-950 border border-slate-800 p-4 rounded-xl flex flex-col justify-between space-y-4">
+            <div>
+              <div class="text-2xl mb-2">🏋️‍♂️</div>
+              <h3 class="font-bold text-sm text-slate-100">Baza Ćwiczeń</h3>
+              <p class="text-xs text-slate-500 mt-1">Słownik ćwiczeń wraz z przypisanymi grupami.</p>
+            </div>
+            <div class="space-y-2">
+              <button onclick="exportData('exercises')" class="w-full bg-slate-800 hover:bg-slate-700 text-indigo-300 text-xs py-2 rounded-lg font-medium border border-slate-700 transition">
+                Eksportuj (JSON)
+              </button>
+              <button onclick="triggerImport('exercises')" class="w-full bg-slate-900 hover:bg-slate-800 text-slate-300 text-xs py-2 rounded-lg font-medium border border-slate-800 transition">
+                Importuj (JSON)
+              </button>
+            </div>
+          </div>
+
+          <!-- 3. Szablony Treningowe -->
+          <div class="bg-slate-950 border border-slate-800 p-4 rounded-xl flex flex-col justify-between space-y-4">
+            <div>
+              <div class="text-2xl mb-2">📐</div>
+              <h3 class="font-bold text-sm text-slate-100">Szablony Treningowe</h3>
+              <p class="text-xs text-slate-500 mt-1">Zdefiniowane gotowe zestawy ćwiczeń (zestawy FBW itp.).</p>
+            </div>
+            <div class="space-y-2">
+              <button onclick="exportData('templates')" class="w-full bg-slate-800 hover:bg-slate-700 text-indigo-300 text-xs py-2 rounded-lg font-medium border border-slate-700 transition">
+                Eksportuj (JSON)
+              </button>
+              <button onclick="triggerImport('templates')" class="w-full bg-slate-900 hover:bg-slate-800 text-slate-300 text-xs py-2 rounded-lg font-medium border border-slate-800 transition">
+                Importuj (JSON)
+              </button>
+            </div>
+          </div>
+
+          <!-- 4. Pełna Baza (Wszystko) -->
+          <div class="bg-indigo-950/40 border border-indigo-900/60 p-4 rounded-xl flex flex-col justify-between space-y-4">
+            <div>
+              <div class="text-2xl mb-2">💾</div>
+              <h3 class="font-bold text-sm text-indigo-200">Wszystkie Dane</h3>
+              <p class="text-xs text-indigo-300/60 mt-1">Kompletny backup historii, bazy i szablonów.</p>
+            </div>
+            <div class="space-y-2">
+              <button onclick="exportData('all')" class="w-full bg-brand-600 hover:bg-brand-500 text-white text-xs py-2 rounded-lg font-semibold shadow transition">
+                Eksportuj Wszystko
+              </button>
+              <button onclick="triggerImport('all')" class="w-full bg-slate-900 hover:bg-slate-800 text-indigo-300 text-xs py-2 rounded-lg font-medium border border-indigo-800/50 transition">
+                Importuj Wszystko
+              </button>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- MODAL: Edycja Treningu z Historii -->
+  <div id="modal-edit-history" class="fixed inset-0 bg-black/70 backdrop-blur-sm hidden flex items-center justify-center z-50 p-4">
+    <div class="bg-slate-900 border border-slate-800 rounded-2xl max-w-2xl w-full p-6 space-y-4 max-h-[90vh] flex flex-col">
+      <div class="flex justify-between items-center border-b border-slate-800 pb-3">
+        <h3 class="text-lg font-bold text-white">Edycja Treningu z Historii</h3>
+        <button onclick="closeModal('modal-edit-history')" class="text-slate-400 hover:text-white text-xl">✕</button>
+      </div>
+
+      <div class="space-y-4 overflow-y-auto pr-1 flex-1">
+        <div>
+          <label class="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">Data Treningu</label>
+          <input type="date" id="edit-history-date" class="bg-slate-950 border border-slate-700 text-slate-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brand-500">
+        </div>
+
+        <div id="edit-history-exercises-container" class="space-y-4">
+          <!-- Renderowane w JS -->
+        </div>
+      </div>
+
+      <div class="flex flex-col sm:flex-row justify-between items-center gap-3 pt-4 border-t border-slate-800">
+        <button onclick="openAddExerciseModal('history')" class="w-full sm:w-auto bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 px-3 py-2 rounded-xl text-xs font-medium transition">
+          + Dodaj Ćwiczenie z Bazy
+        </button>
+        <div class="flex gap-2 w-full sm:w-auto justify-end">
+          <button onclick="closeModal('modal-edit-history')" class="px-4 py-2 rounded-lg text-sm text-slate-400 hover:text-white">Anuluj</button>
+          <button onclick="saveEditedHistoryWorkout()" class="bg-brand-600 hover:bg-brand-500 px-5 py-2 rounded-lg text-sm font-semibold text-white shadow-lg">Zapisz Zmiany</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: Dodaj / Edytuj Ćwiczenie w Bazie -->
+  <div id="modal-exercise" class="fixed inset-0 bg-black/70 backdrop-blur-sm hidden flex items-center justify-center z-50 p-4">
+    <div class="bg-slate-900 border border-slate-800 rounded-2xl max-w-md w-full p-6 space-y-4">
+      <h3 id="modal-exercise-title" class="text-lg font-bold text-white">Dodaj Ćwiczenie</h3>
+      <input type="hidden" id="ex-edit-id">
+      
+      <div>
+        <label class="block text-xs font-medium text-slate-400 mb-1">Nazwa ćwiczenia</label>
+        <input type="text" id="ex-name" class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brand-500">
+      </div>
+
+      <div class="grid grid-cols-2 gap-3">
+        <div>
+          <label class="block text-xs font-medium text-slate-400 mb-1">Typ stanowiska</label>
+          <select id="ex-type" class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brand-500">
+            <option value="Free standing">Free standing</option>
+            <option value="Ławka">Ławka</option>
+            <option value="Maszyna">Maszyna</option>
+            <option value="Wyciąg">Wyciąg</option>
+            <option value="Inne">Inne</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-slate-400 mb-1">Typ obciążenia</label>
+          <select id="ex-load-type" class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brand-500">
+            <option value="Sztanga">Sztanga</option>
+            <option value="Hantle">Hantle</option>
+            <option value="Kettlebell">Kettlebell</option>
+            <option value="Talerze / Maszyna">Talerze / Maszyna</option>
+            <option value="Masa ciała">Masa ciała</option>
+            <option value="Brak">Brak</option>
+          </select>
+        </div>
+      </div>
+
+      <div>
+        <label class="block text-xs font-medium text-slate-400 mb-1">Główna grupa mięśniowa</label>
+        <select id="ex-muscle" class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brand-500">
+          <option value="Klatka piersiowa">Klatka piersiowa</option>
+          <option value="Plecy">Plecy</option>
+          <option value="Uda">Uda</option>
+          <option value="Łydki">Łydki</option>
+          <option value="Barki">Barki</option>
+          <option value="Biceps">Biceps</option>
+          <option value="Triceps">Triceps</option>
+          <option value="Brzuch">Brzuch</option>
+          <option value="Lędźwie / Pośladki">Lędźwie / Pośladki</option>
+          <option value="Inne">Inne</option>
+        </select>
+      </div>
+
+      <div class="flex justify-end gap-2 pt-4 border-t border-slate-800">
+        <button onclick="closeModal('modal-exercise')" class="px-4 py-2 rounded-lg text-sm text-slate-400 hover:text-white">Anuluj</button>
+        <button onclick="saveExerciseToDB()" class="bg-brand-600 hover:bg-brand-500 px-4 py-2 rounded-lg text-sm font-semibold text-white">Zapisz</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: Wybór Ćwiczenia do Treningu -->
+  <div id="modal-select-exercise" class="fixed inset-0 bg-black/70 backdrop-blur-sm hidden flex items-center justify-center z-50 p-4">
+    <div class="bg-slate-900 border border-slate-800 rounded-2xl max-w-md w-full p-6 space-y-4">
+      <h3 class="text-lg font-bold text-white">Wybierz Ćwiczenie z Bazy</h3>
+      <div id="select-exercise-list" class="space-y-2 max-h-60 overflow-y-auto">
+        <!-- Renderowanie w JS -->
+      </div>
+      <div class="flex justify-between items-center pt-4 border-t border-slate-800">
+        <button onclick="closeModal('modal-select-exercise'); openExerciseForm();" class="text-xs text-brand-400 hover:underline">+ Stwórz nowe ćwiczenie</button>
+        <button onclick="closeModal('modal-select-exercise')" class="px-4 py-2 rounded-lg text-sm text-slate-400 hover:text-white">Zamknij</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: Tworzenie / Edycja Szablonu -->
+  <div id="modal-template" class="fixed inset-0 bg-black/70 backdrop-blur-sm hidden flex items-center justify-center z-50 p-4">
+    <div class="bg-slate-900 border border-slate-800 rounded-2xl max-w-md w-full p-6 space-y-4">
+      <h3 id="modal-template-title" class="text-lg font-bold text-white">Nowy Szablon</h3>
+      <input type="hidden" id="tpl-edit-id">
+      <div>
+        <label class="block text-xs font-medium text-slate-400 mb-1">Nazwa szablonu</label>
+        <input type="text" id="tpl-name" placeholder="np. FBW A, Push Day" class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brand-500">
+      </div>
+      <div>
+        <label class="block text-xs font-medium text-slate-400 mb-2">Wybierz ćwiczenia do szablonu</label>
+        <div id="tpl-exercise-checkboxes" class="space-y-2 max-h-48 overflow-y-auto border border-slate-800 p-3 rounded-lg bg-slate-950">
+          <!-- Checkboxy w JS -->
+        </div>
+      </div>
+      <div class="flex justify-end gap-2 pt-4 border-t border-slate-800">
+        <button onclick="closeModal('modal-template')" class="px-4 py-2 rounded-lg text-sm text-slate-400 hover:text-white">Anuluj</button>
+        <button onclick="saveTemplateToDB()" class="bg-brand-600 hover:bg-brand-500 px-4 py-2 rounded-lg text-sm font-semibold text-white">Zapisz Szablon</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- JAVASCRIPT APP LOGIC -->
+  <script>
+    // --- STAN APLIKACJI I BAZA LOKALNA ---
+    const STORAGE_KEY = 'gym_tracker_pro_db_v1';
+    
+    const STACK_COLORS = [
+      '#6366f1', '#38bdf8', '#10b981', '#f59e0b', '#ec4899', 
+      '#8b5cf6', '#14b8a6', '#f97316', '#ef4444', '#84cc16',
+      '#a855f7', '#06b6d4', '#eab308'
+    ];
+
+    let db = {
+      exercises: [
+        { id: 'ex_1', name: 'Wyciskanie na ławce poziomej', type: 'Ławka', loadType: 'Sztanga', muscle: 'Klatka piersiowa' },
+        { id: 'ex_2', name: 'Przysiad ze sztangą', type: 'Free standing', loadType: 'Sztanga', muscle: 'Uda' },
+        { id: 'ex_3', name: 'Ściąganie drążka wyciągu', type: 'Wyciąg', loadType: 'Talerze / Maszyna', muscle: 'Plecy' },
+        { id: 'ex_4', name: 'Wspięcia na palce stojąc', type: 'Maszyna', loadType: 'Talerze / Maszyna', muscle: 'Łydki' }
+      ],
+      templates: [
+        { id: 'tpl_1', name: 'Trening FBW A', exercises: ['ex_1', 'ex_2', 'ex_3'] }
+      ],
+      logs: []
+    };
+
+    let activeWorkoutExercises = [];
+    let editingHistoryWorkout = null;
+    let selectExerciseContext = 'workout';
+    let currentImportType = null;
+    let tonnageChartInstance = null;
+    let progressChartInstance = null;
+
+    function getExerciseMuscle(ex) {
+      if (ex.muscle) return ex.muscle;
+      const found = db.exercises.find(e => e.id === ex.exerciseId);
+      return found ? found.muscle : 'Inne';
+    }
+
+    // --- INICJALIZACJA ---
+    window.addEventListener('DOMContentLoaded', () => {
+      loadFromStorage();
+      document.getElementById('workout-date').valueAsDate = new Date();
+      renderPresetDropdown();
+      renderActiveWorkout();
+      renderExerciseDB();
+      renderTemplateDB();
+      populateAnalyticsFilters();
+    });
+
+    function saveToStorage() {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(db));
+    }
+
+    function loadFromStorage() {
+      const data = localStorage.getItem(STORAGE_KEY);
+      if (data) {
+        try { 
+          db = JSON.parse(data);
+          if (!db.exercises) db.exercises = [];
+          if (!db.templates) db.templates = [];
+          if (!db.logs) db.logs = [];
+
+          db.exercises.forEach(e => {
+            if (e.muscle === 'Nogi') e.muscle = 'Uda';
+          });
+          db.logs.forEach(l => {
+            l.exercises.forEach(e => {
+              if (e.muscle === 'Nogi') e.muscle = 'Uda';
+            });
+          });
+        } catch(e) { 
+          console.error("Błąd odczytu bazy:", e); 
+        }
+      }
+    }
+
+    // --- NAWIGACJA ZAKŁADEK ---
+    function switchTab(tabName) {
+      ['workout', 'analytics', 'templates', 'data'].forEach(t => {
+        document.getElementById(`sec-${t}`).classList.add('hidden');
+        document.getElementById(`tab-${t}`).classList.remove('bg-brand-600', 'text-white');
+        document.getElementById(`tab-${t}`).classList.add('text-slate-400');
+      });
+
+      document.getElementById(`sec-${tabName}`).classList.remove('hidden');
+      document.getElementById(`tab-${tabName}`).classList.add('bg-brand-600', 'text-white');
+      document.getElementById(`tab-${tabName}`).classList.remove('text-slate-400');
+
+      if (tabName === 'analytics') {
+        populateAnalyticsFilters();
+        updateAnalytics();
+      }
+    }
+
+    // --- EKSPORT I IMPORT JSON ---
+    function exportData(type) {
+      let dataToExport;
+      let filename = `gym_tracker_${type}_${new Date().toISOString().split('T')[0]}.json`;
+
+      if (type === 'all') {
+        dataToExport = db;
+      } else if (type === 'logs') {
+        dataToExport = db.logs;
+      } else if (type === 'exercises') {
+        dataToExport = db.exercises;
+      } else if (type === 'templates') {
+        dataToExport = db.templates;
+      }
+
+      const jsonStr = JSON.stringify(dataToExport, null, 2);
+      const blob = new Blob([jsonStr], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }
+
+    function triggerImport(type) {
+      currentImportType = type;
+      const fileInput = document.getElementById('json-file-input');
+      fileInput.value = '';
+      fileInput.click();
+    }
+
+    function handleFileSelect(event) {
+      const file = event.target.files[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = function(e) {
+        try {
+          const importedData = JSON.parse(e.target.result);
+          processImportedData(importedData, currentImportType);
+        } catch (err) {
+          alert("Błąd odczytu pliku JSON: Plik ma nieprawidłowy format.");
+        }
+      };
+      reader.readAsText(file);
+    }
+
+    function processImportedData(data, type) {
+      if (type === 'all') {
+        if (data && typeof data === 'object' && (data.exercises || data.logs || data.templates)) {
+          db.exercises = Array.isArray(data.exercises) ? data.exercises : db.exercises;
+          db.templates = Array.isArray(data.templates) ? data.templates : db.templates;
+          db.logs = Array.isArray(data.logs) ? data.logs : db.logs;
+          alert("Pomyślnie zaimportowano kompletną bazę danych!");
+        } else {
+          alert("Nieprawidłowy plik pełnej bazy JSON.");
+          return;
+        }
+      } else if (type === 'logs') {
+        if (Array.isArray(data)) {
+          const existingIds = new Set(db.logs.map(l => l.id));
+          let addedCount = 0;
+          data.forEach(log => {
+            if (!existingIds.has(log.id)) {
+              db.logs.push(log);
+              addedCount++;
+            }
+          });
+          alert(`Zaimportowano ${addedCount} nowych wpisów historii treningowej!`);
+        } else {
+          alert("Plik powinien zawierać tablicę wpisów historii.");
+          return;
+        }
+      } else if (type === 'exercises') {
+        if (Array.isArray(data)) {
+          const existingIds = new Set(db.exercises.map(e => e.id));
+          let addedCount = 0;
+          data.forEach(ex => {
+            if (!existingIds.has(ex.id)) {
+              db.exercises.push(ex);
+              addedCount++;
+            }
+          });
+          alert(`Zaimportowano ${addedCount} nowych ćwiczeń do bazy!`);
+        } else {
+          alert("Plik powinien zawierać tablicę ćwiczeń.");
+          return;
+        }
+      } else if (type === 'templates') {
+        if (Array.isArray(data)) {
+          const existingIds = new Set(db.templates.map(t => t.id));
+          let addedCount = 0;
+          data.forEach(tpl => {
+            if (!existingIds.has(tpl.id)) {
+              db.templates.push(tpl);
+              addedCount++;
+            }
+          });
+          alert(`Zaimportowano ${addedCount} nowych szablonów!`);
+        } else {
+          alert("Plik powinien zawierać tablicę szablonów.");
+          return;
+        }
+      }
+
+      saveToStorage();
+      renderPresetDropdown();
+      renderExerciseDB();
+      renderTemplateDB();
+      populateAnalyticsFilters();
+    }
+
+    // --- LOGIKA DZIENNIKA TRENINGOWEGO ---
+    function renderPresetDropdown() {
+      const select = document.getElementById('preset-select');
+      select.innerHTML = '<option value="">-- Wybierz szablon --</option>';
+      db.templates.forEach(t => {
+        select.innerHTML += `<option value="${t.id}">${t.name}</option>`;
+      });
+    }
+
+    function loadPreset() {
+      const tplId = document.getElementById('preset-select').value;
+      if (!tplId) return;
+      const tpl = db.templates.find(t => t.id === tplId);
+      if (!tpl) return;
+
+      activeWorkoutExercises = [];
+      tpl.exercises.forEach(exId => {
+        const exDb = db.exercises.find(e => e.id === exId);
+        if (exDb) {
+          addExerciseToCurrentWorkout(exDb);
+        }
+      });
+      renderActiveWorkout();
+    }
+
+    function addExerciseToCurrentWorkout(exDb) {
+      const lastHistoryStats = getLastExerciseHistory(exDb.id);
+      
+      let initialSets = [
+        { weight: 0, reps: 0 },
+        { weight: 0, reps: 0 },
+        { weight: 0, reps: 0 }
+      ];
+
+      if (lastHistoryStats && lastHistoryStats.length > 0) {
+        initialSets = lastHistoryStats.map(s => ({ weight: s.weight, reps: s.reps }));
+      }
+
+      activeWorkoutExercises.push({
+        instanceId: 'inst_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4),
+        exerciseId: exDb.id,
+        name: exDb.name,
+        type: exDb.type,
+        loadType: exDb.loadType,
+        muscle: exDb.muscle,
+        sets: initialSets
+      });
+    }
+
+    function getLastExerciseHistory(exId) {
+      const sortedLogs = [...db.logs].sort((a,b) => new Date(b.date) - new Date(a.date));
+      for (let log of sortedLogs) {
+        const match = log.exercises.find(e => e.exerciseId === exId);
+        if (match && match.sets && match.sets.length > 0) {
+          return match.sets;
+        }
+      }
+      return null;
+    }
+
+    function renderActiveWorkout() {
+      const container = document.getElementById('workout-exercises-container');
+      if (activeWorkoutExercises.length === 0) {
+        container.innerHTML = `
+          <div class="text-center py-12 border-2 border-dashed border-slate-800 rounded-xl">
+            <p class="text-slate-500 text-sm">Brak ćwiczeń w aktualnej sesji.</p>
+            <p class="text-slate-600 text-xs mt-1">Wczytaj szablon lub dodaj ćwiczenie poniżej.</p>
+          </div>
+        `;
+        return;
+      }
+
+      container.innerHTML = activeWorkoutExercises.map((ex, exIndex) => {
+        const exTotalVolume = ex.sets.reduce((acc, s) => acc + ((parseFloat(s.weight) || 0) * (parseInt(s.reps) || 0)), 0);
+
+        return `
+          <div class="bg-slate-950 border border-slate-800 rounded-xl p-4 space-y-3">
+            <div class="flex justify-between items-start">
+              <div>
+                <h4 class="font-bold text-base text-slate-100">${ex.name}</h4>
+                <div class="flex flex-wrap gap-2 mt-1">
+                  <span class="text-[10px] bg-indigo-950 text-indigo-300 border border-indigo-800 px-2 py-0.5 rounded-full">${ex.muscle}</span>
+                  <span class="text-[10px] bg-slate-800 text-slate-400 px-2 py-0.5 rounded-full">${ex.type}</span>
+                  <span class="text-[10px] bg-slate-800 text-slate-400 px-2 py-0.5 rounded-full">${ex.loadType}</span>
+                </div>
+              </div>
+              <button onclick="removeExerciseFromWorkout(${exIndex})" class="text-red-400 hover:text-red-300 text-xs px-2 py-1 rounded bg-red-950/40 border border-red-900/50">
+                Usuń
+              </button>
+            </div>
+
+            <!-- Nagłówki Serii -->
+            <div class="grid grid-cols-12 gap-2 text-xs font-semibold text-slate-400 border-b border-slate-800 pb-2 pt-2">
+              <div class="col-span-2 text-center">Seria</div>
+              <div class="col-span-3 text-center">Ciężar [kg]</div>
+              <div class="col-span-3 text-center">Powtórzenia</div>
+              <div class="col-span-3 text-center">Wynik [kg]</div>
+              <div class="col-span-1"></div>
+            </div>
+
+            <!-- Lista Serii -->
+            <div class="space-y-2">
+              ${ex.sets.map((set, setIndex) => {
+                const setVol = (parseFloat(set.weight) || 0) * (parseInt(set.reps) || 0);
+                return `
+                  <div class="grid grid-cols-12 gap-2 items-center text-sm">
+                    <div class="col-span-2 text-center font-bold text-slate-400">#${setIndex + 1}</div>
+                    <div class="col-span-3">
+                      <input type="number" step="0.5" value="${set.weight || ''}" placeholder="0" 
+                        onchange="updateSetVal(${exIndex}, ${setIndex}, 'weight', this.value)"
+                        class="w-full bg-slate-900 border border-slate-700 text-center rounded px-2 py-1 focus:outline-none focus:border-brand-500">
+                    </div>
+                    <div class="col-span-3">
+                      <input type="number" value="${set.reps || ''}" placeholder="0" 
+                        onchange="updateSetVal(${exIndex}, ${setIndex}, 'reps', this.value)"
+                        class="w-full bg-slate-900 border border-slate-700 text-center rounded px-2 py-1 focus:outline-none focus:border-brand-500">
+                    </div>
+                    <div class="col-span-3 text-center font-mono text-xs text-indigo-400 font-semibold">
+                      ${setVol} kg
+                    </div>
+                    <div class="col-span-1 text-right">
+                      <button onclick="removeSet(${exIndex}, ${setIndex})" class="text-slate-500 hover:text-red-400 font-bold px-1">✕</button>
+                    </div>
+                  </div>
+                `;
+              }).join('')}
+            </div>
+
+            <div class="flex justify-between items-center pt-3 border-t border-slate-800/60 text-xs">
+              <button onclick="addSet(${exIndex})" class="text-brand-400 hover:text-brand-300 font-medium">
+                + Dodaj serię
+              </button>
+              <div class="text-slate-400">
+                Suma ćwiczenia: <span class="font-bold text-indigo-300 font-mono">${exTotalVolume} kg</span>
+              </div>
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    function updateSetVal(exIdx, setIdx, field, val) {
+      activeWorkoutExercises[exIdx].sets[setIdx][field] = parseFloat(val) || 0;
+      renderActiveWorkout();
+    }
+
+    function addSet(exIdx) {
+      const sets = activeWorkoutExercises[exIdx].sets;
+      const lastSet = sets.length > 0 ? sets[sets.length - 1] : { weight: 0, reps: 0 };
+      sets.push({ weight: lastSet.weight, reps: lastSet.reps });
+      renderActiveWorkout();
+    }
+
+    function removeSet(exIdx, setIdx) {
+      activeWorkoutExercises[exIdx].sets.splice(setIdx, 1);
+      renderActiveWorkout();
+    }
+
+    function removeExerciseFromWorkout(exIdx) {
+      activeWorkoutExercises.splice(exIdx, 1);
+      renderActiveWorkout();
+    }
+
+    function saveCurrentWorkout() {
+      if (activeWorkoutExercises.length === 0) {
+        alert("Dodaj przynajmniej jedno ćwiczenie do treningu!");
+        return;
+      }
+
+      const dateVal = document.getElementById('workout-date').value || new Date().toISOString().split('T')[0];
+
+      activeWorkoutExercises.forEach(ex => {
+        const exists = db.exercises.some(e => e.id === ex.exerciseId);
+        if (!exists) {
+          db.exercises.push({
+            id: ex.exerciseId,
+            name: ex.name,
+            type: ex.type,
+            loadType: ex.loadType,
+            muscle: ex.muscle
+          });
+        }
+      });
+
+      const workoutLog = {
+        id: 'log_' + Date.now(),
+        date: dateVal,
+        exercises: JSON.parse(JSON.stringify(activeWorkoutExercises))
+      };
+
+      db.logs.push(workoutLog);
+      saveToStorage();
+
+      alert("Trening został pomyślnie zapisany!");
+      activeWorkoutExercises = [];
+      renderActiveWorkout();
+      renderExerciseDB();
+    }
+
+    // --- BAZA ĆWICZEŃ I SZABLONÓW ---
+    function renderExerciseDB() {
+      const container = document.getElementById('exercise-db-list');
+      container.innerHTML = db.exercises.map(ex => `
+        <div class="bg-slate-950 border border-slate-800 rounded-xl p-3 flex justify-between items-center">
+          <div>
+            <h4 class="font-bold text-sm text-slate-200">${ex.name}</h4>
+            <div class="flex gap-2 mt-1">
+              <span class="text-[10px] bg-slate-800 text-indigo-400 px-2 py-0.5 rounded">${ex.muscle}</span>
+              <span class="text-[10px] bg-slate-800 text-slate-400 px-2 py-0.5 rounded">${ex.type}</span>
+            </div>
+          </div>
+          <div class="flex gap-2">
+            <button onclick="editExerciseInDB('${ex.id}')" class="text-xs text-slate-400 hover:text-white px-2 py-1 bg-slate-900 border border-slate-800 rounded">Edytuj</button>
+            <button onclick="deleteExerciseFromDB('${ex.id}')" class="text-xs text-red-400 hover:text-red-300 px-2 py-1 bg-red-950/30 border border-red-900/40 rounded">Usuń</button>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    function openExerciseForm(editId = null) {
+      document.getElementById('ex-edit-id').value = editId || '';
+      document.getElementById('modal-exercise-title').innerText = editId ? "Edytuj Ćwiczenie" : "Dodaj Nowe Ćwiczenie";
+      
+      if (editId) {
+        const ex = db.exercises.find(e => e.id === editId);
+        if (ex) {
+          document.getElementById('ex-name').value = ex.name;
+          document.getElementById('ex-type').value = ex.type;
+          document.getElementById('ex-load-type').value = ex.loadType;
+          document.getElementById('ex-muscle').value = ex.muscle;
+        }
+      } else {
+        document.getElementById('ex-name').value = '';
+        document.getElementById('ex-type').selectedIndex = 0;
+        document.getElementById('ex-load-type').selectedIndex = 0;
+        document.getElementById('ex-muscle').selectedIndex = 0;
+      }
+      openModal('modal-exercise');
+    }
+
+    function editExerciseInDB(id) {
+      openExerciseForm(id);
+    }
+
+    function saveExerciseToDB() {
+      const id = document.getElementById('ex-edit-id').value;
+      const name = document.getElementById('ex-name').value.trim();
+      const type = document.getElementById('ex-type').value;
+      const loadType = document.getElementById('ex-load-type').value;
+      const muscle = document.getElementById('ex-muscle').value;
+
+      if (!name) { alert("Podaj nazwę ćwiczenia!"); return; }
+
+      if (id) {
+        const ex = db.exercises.find(e => e.id === id);
+        if (ex) { 
+          ex.name = name; 
+          ex.type = type; 
+          ex.loadType = loadType; 
+          ex.muscle = muscle; 
+        }
+      } else {
+        const newEx = { id: 'ex_' + Date.now(), name, type, loadType, muscle };
+        db.exercises.push(newEx);
+      }
+
+      saveToStorage();
+      closeModal('modal-exercise');
+      renderExerciseDB();
+      renderTemplateDB();
+    }
+
+    function deleteExerciseFromDB(id) {
+      if (!confirm("Czy na pewno chcesz usunąć ćwiczenie z bazy?")) return;
+      db.exercises = db.exercises.filter(e => e.id !== id);
+      saveToStorage();
+      renderExerciseDB();
+      renderTemplateDB();
+    }
+
+    function openAddExerciseModal(context = 'workout') {
+      selectExerciseContext = context;
+      const container = document.getElementById('select-exercise-list');
+      container.innerHTML = db.exercises.map(ex => `
+        <div onclick="selectExerciseForWorkout('${ex.id}')" class="p-2.5 bg-slate-950 border border-slate-800 hover:border-brand-500 rounded-lg cursor-pointer flex justify-between items-center transition">
+          <div>
+            <div class="font-bold text-sm text-slate-200">${ex.name}</div>
+            <div class="text-xs text-slate-400">${ex.muscle} • ${ex.type}</div>
+          </div>
+          <span class="text-brand-400 text-xs font-semibold">+ Wybierz</span>
+        </div>
+      `).join('');
+      openModal('modal-select-exercise');
+    }
+
+    function selectExerciseForWorkout(exId) {
+      const exDb = db.exercises.find(e => e.id === exId);
+      if (!exDb) return;
+
+      if (selectExerciseContext === 'workout') {
+        addExerciseToCurrentWorkout(exDb);
+        renderActiveWorkout();
+      } else if (selectExerciseContext === 'history' && editingHistoryWorkout) {
+        editingHistoryWorkout.exercises.push({
+          instanceId: 'inst_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4),
+          exerciseId: exDb.id,
+          name: exDb.name,
+          type: exDb.type,
+          loadType: exDb.loadType,
+          muscle: exDb.muscle,
+          sets: [{ weight: 0, reps: 0 }]
+        });
+        renderEditHistoryModal();
+      }
+      closeModal('modal-select-exercise');
+    }
+
+    // --- SZABLONY TRENINGÓW ---
+    function renderTemplateDB() {
+      const container = document.getElementById('template-db-list');
+      container.innerHTML = db.templates.map(tpl => {
+        const exNames = tpl.exercises.map(eId => {
+          const ex = db.exercises.find(e => e.id === eId);
+          return ex ? ex.name : 'Nieznane';
+        }).join(', ');
+
+        return `
+          <div class="bg-slate-950 border border-slate-800 rounded-xl p-3 flex justify-between items-center">
+            <div>
+              <h4 class="font-bold text-sm text-slate-200">${tpl.name}</h4>
+              <p class="text-xs text-slate-400 mt-1 line-clamp-1">${exNames}</p>
+            </div>
+            <div class="flex gap-2">
+              <button onclick="editTemplateInDB('${tpl.id}')" class="text-xs text-slate-400 hover:text-white px-2 py-1 bg-slate-900 border border-slate-800 rounded">Edytuj</button>
+              <button onclick="deleteTemplateFromDB('${tpl.id}')" class="text-xs text-red-400 hover:text-red-300 px-2 py-1 bg-red-950/30 border border-red-900/40 rounded">Usuń</button>
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    function openTemplateForm(editId = null) {
+      document.getElementById('tpl-edit-id').value = editId || '';
+      document.getElementById('modal-template-title').innerText = editId ? "Edytuj Szablon" : "Nowy Szablon";
+      
+      const tpl = editId ? db.templates.find(t => t.id === editId) : null;
+      document.getElementById('tpl-name').value = tpl ? tpl.name : '';
+
+      const container = document.getElementById('tpl-exercise-checkboxes');
+      container.innerHTML = db.exercises.map(ex => {
+        const checked = tpl && tpl.exercises.includes(ex.id) ? 'checked' : '';
+        return `
+          <label class="flex items-center space-x-2 text-xs text-slate-300 cursor-pointer p-1 hover:bg-slate-900 rounded">
+            <input type="checkbox" value="${ex.id}" ${checked} class="tpl-ex-check rounded bg-slate-900 border-slate-700 text-brand-600 focus:ring-0">
+            <span>${ex.name} (${ex.muscle})</span>
+          </label>
+        `;
+      }).join('');
+
+      openModal('modal-template');
+    }
+
+    function editTemplateInDB(id) {
+      openTemplateForm(id);
+    }
+
+    function saveTemplateToDB() {
+      const id = document.getElementById('tpl-edit-id').value;
+      const name = document.getElementById('tpl-name').value.trim();
+      const selectedChecks = document.querySelectorAll('.tpl-ex-check:checked');
+      const selectedIds = Array.from(selectedChecks).map(c => c.value);
+
+      if (!name) { alert("Podaj nazwę szablonu!"); return; }
+
+      if (id) {
+        const tpl = db.templates.find(t => t.id === id);
+        if (tpl) { tpl.name = name; tpl.exercises = selectedIds; }
+      } else {
+        db.templates.push({ id: 'tpl_' + Date.now(), name, exercises: selectedIds });
+      }
+
+      saveToStorage();
+      closeModal('modal-template');
+      renderTemplateDB();
+      renderPresetDropdown();
+    }
+
+    function deleteTemplateFromDB(id) {
+      if (!confirm("Czy na pewno chcesz usunąć ten szablon?")) return;
+      db.templates = db.templates.filter(t => t.id !== id);
+      saveToStorage();
+      renderTemplateDB();
+      renderPresetDropdown();
+    }
+
+    // --- ANALITYKA I WYKRESY ---
+    function populateAnalyticsFilters() {
+      const muscleSelect = document.getElementById('filter-muscle');
+      const exSelect = document.getElementById('filter-exercise');
+
+      const currentExVal = exSelect.value;
+      const currentMuscleVal = muscleSelect.value;
+
+      const muscles = [...new Set(db.exercises.map(e => e.muscle))];
+      muscleSelect.innerHTML = '<option value="all">Wszystkie grupy</option>' + 
+        muscles.map(m => `<option value="${m}">${m}</option>`).join('');
+
+      exSelect.innerHTML = '<option value="all">Wszystkie ćwiczenia</option>' + 
+        db.exercises.map(e => `<option value="${e.id}">${e.name} [${e.muscle}]</option>`).join('');
+
+      if (currentMuscleVal) muscleSelect.value = currentMuscleVal;
+      if (currentExVal) exSelect.value = currentExVal;
+    }
+
+    function getFilteredLogs() {
+      const windowVal = document.getElementById('time-window').value;
+      let logs = [...db.logs].sort((a,b) => new Date(a.date) - new Date(b.date));
+
+      if (windowVal !== 'all') {
+        const days = parseInt(windowVal);
+        const cutoff = new Date();
+        cutoff.setDate(cutoff.getDate() - days);
+        logs = logs.filter(l => new Date(l.date) >= cutoff);
+      }
+
+      return logs;
+    }
+
+    function updateAnalytics() {
+      const logs = getFilteredLogs();
+      const muscleFilter = document.getElementById('filter-muscle').value;
+      const exFilter = document.getElementById('filter-exercise').value;
+
+      renderTonnageChart(logs, muscleFilter, exFilter);
+      renderExerciseProgressChart(logs, exFilter);
+      renderHistoryList(logs);
+    }
+
+    function renderTonnageChart(logs, muscleFilter, exFilter) {
+      const ctx = document.getElementById('tonnageChart').getContext('2d');
+      if (tonnageChartInstance) tonnageChartInstance.destroy();
+
+      const dateSet = new Set();
+      const stackData = {};
+      const stackKeysSet = new Set();
+
+      logs.forEach(log => {
+        log.exercises.forEach(ex => {
+          const muscle = getExerciseMuscle(ex);
+          if (muscleFilter !== 'all' && muscle !== muscleFilter) return;
+          if (exFilter !== 'all' && ex.exerciseId !== exFilter) return;
+
+          const exVol = ex.sets.reduce((sum, s) => sum + ((parseFloat(s.weight)||0) * (parseInt(s.reps)||0)), 0);
+          if (exVol <= 0) return;
+
+          dateSet.add(log.date);
+
+          let stackKey = (muscleFilter === 'all') ? muscle : ex.name;
+
+          if (!stackData[stackKey]) stackData[stackKey] = {};
+          stackData[stackKey][log.date] = (stackData[stackKey][log.date] || 0) + exVol;
+          stackKeysSet.add(stackKey);
+        });
+      });
+
+      const dates = Array.from(dateSet).sort((a,b) => new Date(a) - new Date(b));
+      const stackKeys = Array.from(stackKeysSet);
+
+      const datasets = stackKeys.map((key, index) => {
+        return {
+          label: key,
+          data: dates.map(d => stackData[key][d] || 0),
+          backgroundColor: STACK_COLORS[index % STACK_COLORS.length],
+          borderRadius: 4
+        };
+      });
+
+      tonnageChartInstance = new Chart(ctx, {
+        type: 'bar',
+        data: {
+          labels: dates,
+          datasets: datasets
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { 
+              display: datasets.length > 0, 
+              position: 'bottom',
+              labels: { color: '#94a3b8', boxWidth: 12, font: { size: 11 } } 
+            },
+            tooltip: {
+              callbacks: {
+                footer: (tooltipItems) => {
+                  let total = 0;
+                  tooltipItems.forEach(item => { total += item.parsed.y; });
+                  return 'Suma całkowita: ' + total + ' kg';
+                }
+              }
+            }
+          },
+          scales: {
+            x: { stacked: true, ticks: { color: '#94a3b8' }, grid: { color: '#1e293b' } },
+            y: { stacked: true, ticks: { color: '#94a3b8' }, grid: { color: '#1e293b' } }
+          }
+        }
+      });
+    }
+
+    function renderExerciseProgressChart(logs, exFilter) {
+      const ctx = document.getElementById('exerciseProgressChart').getContext('2d');
+      if (progressChartInstance) progressChartInstance.destroy();
+
+      if (exFilter === 'all') {
+        progressChartInstance = new Chart(ctx, {
+          type: 'line',
+          data: { labels: [], datasets: [] },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { title: { display: true, text: 'Wybierz konkretne ćwiczenie z filtra powyżej', color: '#64748b' } }
+          }
+        });
+        return;
+      }
+
+      const labels = [];
+      const maxWeights = [];
+      const totalVolumes = [];
+      const maxWeightReps = [];
+      const totalRepsList = [];
+      const setsDetailsList = [];
+
+      logs.forEach(log => {
+        const ex = log.exercises.find(e => e.exerciseId === exFilter);
+        if (ex && ex.sets.length > 0) {
+          labels.push(log.date);
+
+          let maxW = 0;
+          let maxR = 0;
+          let totR = 0;
+          let vol = 0;
+          let setStrs = [];
+
+          ex.sets.forEach(s => {
+            const w = parseFloat(s.weight) || 0;
+            const r = parseInt(s.reps) || 0;
+            vol += (w * r);
+            totR += r;
+
+            if (w > maxW) {
+              maxW = w;
+              maxR = r;
+            } else if (w === maxW && r > maxR) {
+              maxR = r;
+            }
+
+            setStrs.push(`${w}kg × ${r}`);
+          });
+
+          maxWeights.push(maxW);
+          totalVolumes.push(vol);
+          maxWeightReps.push(maxR);
+          totalRepsList.push(totR);
+          setsDetailsList.push(setStrs.join(', '));
+        }
+      });
+
+      progressChartInstance = new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels: labels,
+          datasets: [
+            {
+              label: 'Max Ciężar (kg)',
+              data: maxWeights,
+              borderColor: '#38bdf8',
+              backgroundColor: '#38bdf8',
+              tension: 0.2
+            },
+            {
+              label: 'Objętość (kg)',
+              data: totalVolumes,
+              borderColor: '#818cf8',
+              backgroundColor: '#818cf8',
+              tension: 0.2,
+              yAxisID: 'y1'
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            tooltip: {
+              callbacks: {
+                label: function(context) {
+                  const idx = context.dataIndex;
+                  if (context.dataset.label.startsWith('Max Ciężar')) {
+                    return `Max Ciężar: ${context.parsed.y} kg (${maxWeightReps[idx]} powt.)`;
+                  } else if (context.dataset.label.startsWith('Objętość')) {
+                    return `Objętość: ${context.parsed.y} kg (łącznie ${totalRepsList[idx]} powt.)`;
+                  }
+                  return context.dataset.label + ': ' + context.parsed.y;
+                },
+                afterBody: function(context) {
+                  const idx = context[0].dataIndex;
+                  if (setsDetailsList[idx]) {
+                    return 'Serie: ' + setsDetailsList[idx];
+                  }
+                  return '';
+                }
+              }
+            }
+          },
+          scales: {
+            x: { ticks: { color: '#94a3b8' }, grid: { color: '#1e293b' } },
+            y: { position: 'left', ticks: { color: '#38bdf8' }, grid: { color: '#1e293b' } },
+            y1: { position: 'right', ticks: { color: '#818cf8' }, grid: { display: false } }
+          }
+        }
+      });
+    }
+
+    function renderHistoryList(logs) {
+      const container = document.getElementById('history-list');
+      if (logs.length === 0) {
+        container.innerHTML = '<p class="text-xs text-slate-500 py-4 text-center">Brak treningów w wybranym przedziale czasowym.</p>';
+        return;
+      }
+
+      const reversedLogs = [...logs].reverse();
+      container.innerHTML = reversedLogs.map(log => {
+        const totalTon = log.exercises.reduce((acc, ex) => 
+          acc + ex.sets.reduce((sAcc, s) => sAcc + ((parseFloat(s.weight)||0)*(parseInt(s.reps)||0)), 0), 0);
+
+        return `
+          <div class="bg-slate-950 border border-slate-800 rounded-xl p-4 space-y-2">
+            <div class="flex justify-between items-center border-b border-slate-800/80 pb-2">
+              <span class="font-bold text-sm text-indigo-400">${log.date}</span>
+              <div class="flex items-center gap-3">
+                <span class="text-xs text-slate-400">Suma: <strong class="text-slate-200 font-mono">${totalTon} kg</strong></span>
+                <button onclick="openEditHistoryModal('${log.id}')" class="text-xs text-indigo-400 hover:text-indigo-300 font-medium">Edytuj</button>
+                <button onclick="deleteLog('${log.id}')" class="text-xs text-red-400 hover:underline">Usuń</button>
+              </div>
+            </div>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-2 pt-1">
+              ${log.exercises.map(ex => {
+                const muscle = getExerciseMuscle(ex);
+                return `
+                <div class="text-xs bg-slate-900 p-2 rounded border border-slate-800">
+                  <div class="flex items-center justify-between gap-1">
+                    <span class="font-semibold text-slate-300">${ex.name}</span>
+                    <span class="text-[10px] bg-indigo-950 text-indigo-300 border border-indigo-800/60 px-1.5 py-0.5 rounded-full shrink-0">${muscle}</span>
+                  </div>
+                  <div class="text-slate-500 mt-1">
+                    ${ex.sets.map(s => `${s.weight}kg × ${s.reps}`).join(' | ')}
+                  </div>
+                </div>
+              `;
+              }).join('')}
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    function deleteLog(logId) {
+      if (!confirm("Czy na pewno chcesz usunąć ten trening z historii?")) return;
+      db.logs = db.logs.filter(l => l.id !== logId);
+      saveToStorage();
+      updateAnalytics();
+    }
+
+    // --- EDYCJA TRENINGÓW W HISTORII ---
+    function openEditHistoryModal(logId) {
+      const log = db.logs.find(l => l.id === logId);
+      if (!log) return;
+
+      editingHistoryWorkout = JSON.parse(JSON.stringify(log));
+      document.getElementById('edit-history-date').value = editingHistoryWorkout.date;
+      
+      renderEditHistoryModal();
+      openModal('modal-edit-history');
+    }
+
+    function renderEditHistoryModal() {
+      if (!editingHistoryWorkout) return;
+      const container = document.getElementById('edit-history-exercises-container');
+
+      if (editingHistoryWorkout.exercises.length === 0) {
+        container.innerHTML = `<p class="text-xs text-slate-500 py-4 text-center">Brak ćwiczeń w tym treningu. Dodaj ćwiczenie z bazy poniżej.</p>`;
+        return;
+      }
+
+      container.innerHTML = editingHistoryWorkout.exercises.map((ex, exIdx) => {
+        const exVol = ex.sets.reduce((sum, s) => sum + ((parseFloat(s.weight)||0) * (parseInt(s.reps)||0)), 0);
+
+        return `
+          <div class="bg-slate-950 border border-slate-800 rounded-xl p-3 space-y-3">
+            <div class="flex justify-between items-center border-b border-slate-800/80 pb-2">
+              <div>
+                <h4 class="font-bold text-sm text-slate-200">${ex.name}</h4>
+                <div class="text-[10px] text-slate-400">${ex.muscle || ''}</div>
+              </div>
+              <button onclick="removeExerciseFromHistoryEdit(${exIdx})" class="text-red-400 hover:text-red-300 text-xs px-2 py-0.5 rounded bg-red-950/40 border border-red-900/50">
+                Usuń Ćwiczenie
+              </button>
+            </div>
+
+            <!-- Serie -->
+            <div class="space-y-2">
+              ${ex.sets.map((set, setIdx) => {
+                const setVol = (parseFloat(set.weight) || 0) * (parseInt(set.reps) || 0);
+                return `
+                  <div class="grid grid-cols-12 gap-2 items-center text-xs">
+                    <div class="col-span-2 text-center text-slate-400 font-bold">#${setIdx + 1}</div>
+                    <div class="col-span-4">
+                      <input type="number" step="0.5" value="${set.weight || ''}" placeholder="0" 
+                        onchange="updateHistorySetVal(${exIdx}, ${setIdx}, 'weight', this.value)"
+                        class="w-full bg-slate-900 border border-slate-700 text-center rounded px-2 py-1 text-slate-100 focus:outline-none focus:border-brand-500">
+                    </div>
+                    <div class="col-span-4">
+                      <input type="number" value="${set.reps || ''}" placeholder="0" 
+                        onchange="updateHistorySetVal(${exIdx}, ${setIdx}, 'reps', this.value)"
+                        class="w-full bg-slate-900 border border-slate-700 text-center rounded px-2 py-1 text-slate-100 focus:outline-none focus:border-brand-500">
+                    </div>
+                    <div class="col-span-2 text-right">
+                      <button onclick="removeHistorySet(${exIdx}, ${setIdx})" class="text-slate-500 hover:text-red-400 font-bold px-1">✕</button>
+                    </div>
+                  </div>
+                `;
+              }).join('')}
+            </div>
+
+            <div class="flex justify-between items-center pt-2 border-t border-slate-800/60 text-xs">
+              <button onclick="addHistorySet(${exIdx})" class="text-brand-400 hover:text-brand-300">
+                + Dodaj serię
+              </button>
+              <div class="text-slate-400 text-[11px]">
+                Suma: <span class="font-bold text-indigo-300 font-mono">${exVol} kg</span>
+              </div>
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    function updateHistorySetVal(exIdx, setIdx, field, val) {
+      if (!editingHistoryWorkout) return;
+      editingHistoryWorkout.exercises[exIdx].sets[setIdx][field] = parseFloat(val) || 0;
+      renderEditHistoryModal();
+    }
+
+    function addHistorySet(exIdx) {
+      if (!editingHistoryWorkout) return;
+      const sets = editingHistoryWorkout.exercises[exIdx].sets;
+      const lastSet = sets.length > 0 ? sets[sets.length - 1] : { weight: 0, reps: 0 };
+      sets.push({ weight: lastSet.weight, reps: lastSet.reps });
+      renderEditHistoryModal();
+    }
+
+    function removeHistorySet(exIdx, setIdx) {
+      if (!editingHistoryWorkout) return;
+      editingHistoryWorkout.exercises[exIdx].sets.splice(setIdx, 1);
+      renderEditHistoryModal();
+    }
+
+    function removeExerciseFromHistoryEdit(exIdx) {
+      if (!editingHistoryWorkout) return;
+      editingHistoryWorkout.exercises.splice(exIdx, 1);
+      renderEditHistoryModal();
+    }
+
+    function saveEditedHistoryWorkout() {
+      if (!editingHistoryWorkout) return;
+
+      const newDate = document.getElementById('edit-history-date').value;
+      if (!newDate) {
+        alert("Podaj datę treningu!");
+        return;
+      }
+
+      editingHistoryWorkout.date = newDate;
+
+      const logIndex = db.logs.findIndex(l => l.id === editingHistoryWorkout.id);
+      if (logIndex !== -1) {
+        db.logs[logIndex] = JSON.parse(JSON.stringify(editingHistoryWorkout));
+        saveToStorage();
+        updateAnalytics();
+      }
+
+      closeModal('modal-edit-history');
+      editingHistoryWorkout = null;
+    }
+
+    // --- MODALE HELPERS ---
+    function openModal(id) { document.getElementById(id).classList.remove('hidden'); }
+    function closeModal(id) { document.getElementById(id).classList.add('hidden'); }
+  </script>
+</body>
+</html>
