@@ -477,6 +477,7 @@
           db.logs.forEach(l => {
             l.exercises.forEach(e => {
               if (e.muscle === 'Nogi') e.muscle = 'Uda';
+              if (e.targetReps === undefined) e.targetReps = 10;
             });
           });
         } catch(e) { 
@@ -560,6 +561,11 @@
           db.exercises = Array.isArray(data.exercises) ? data.exercises : db.exercises;
           db.templates = Array.isArray(data.templates) ? data.templates : db.templates;
           db.logs = Array.isArray(data.logs) ? data.logs : db.logs;
+          db.logs.forEach(l => {
+            l.exercises.forEach(e => {
+              if (e.targetReps === undefined) e.targetReps = 10;
+            });
+          });
           alert("Pomyślnie zaimportowano kompletną bazę danych!");
         } else {
           alert("Nieprawidłowy plik pełnej bazy JSON.");
@@ -571,6 +577,9 @@
           let addedCount = 0;
           data.forEach(log => {
             if (!existingIds.has(log.id)) {
+              log.exercises.forEach(e => {
+                if (e.targetReps === undefined) e.targetReps = 10;
+              });
               db.logs.push(log);
               addedCount++;
             }
@@ -652,9 +661,15 @@
         { weight: 0, reps: 0 },
         { weight: 0, reps: 0 }
       ];
+      let initialTargetReps = 10;
 
-      if (lastHistoryStats && lastHistoryStats.length > 0) {
-        initialSets = lastHistoryStats.map(s => ({ weight: s.weight, reps: s.reps }));
+      if (lastHistoryStats) {
+        if (lastHistoryStats.sets && lastHistoryStats.sets.length > 0) {
+          initialSets = lastHistoryStats.sets.map(s => ({ weight: s.weight, reps: s.reps }));
+        }
+        if (lastHistoryStats.targetReps !== undefined) {
+          initialTargetReps = lastHistoryStats.targetReps;
+        }
       }
 
       activeWorkoutExercises.push({
@@ -664,6 +679,7 @@
         type: exDb.type,
         loadType: exDb.loadType,
         muscle: exDb.muscle,
+        targetReps: initialTargetReps,
         sets: initialSets
       });
     }
@@ -673,7 +689,7 @@
       for (let log of sortedLogs) {
         const match = log.exercises.find(e => e.exerciseId === exId);
         if (match && match.sets && match.sets.length > 0) {
-          return match.sets;
+          return match;
         }
       }
       return null;
@@ -714,8 +730,9 @@
             <div class="grid grid-cols-12 gap-2 text-xs font-semibold text-slate-400 border-b border-slate-800 pb-2 pt-2">
               <div class="col-span-2 text-center">Seria</div>
               <div class="col-span-3 text-center">Ciężar [kg]</div>
-              <div class="col-span-3 text-center">Powtórzenia</div>
-              <div class="col-span-3 text-center">Wynik [kg]</div>
+              <div class="col-span-2 text-center">Cel (Powtórzenia)</div>
+              <div class="col-span-2 text-center">Powtórzenia</div>
+              <div class="col-span-2 text-center">Wynik [kg]</div>
               <div class="col-span-1"></div>
             </div>
 
@@ -731,12 +748,17 @@
                         onchange="updateSetVal(${exIndex}, ${setIndex}, 'weight', this.value)"
                         class="w-full bg-slate-900 border border-slate-700 text-center rounded px-2 py-1 focus:outline-none focus:border-brand-500">
                     </div>
-                    <div class="col-span-3">
+                    <div class="col-span-2">
+                      <input type="number" value="${ex.targetReps !== undefined ? ex.targetReps : 10}" placeholder="10" 
+                        onchange="updateTargetReps(${exIndex}, this.value)"
+                        class="w-full bg-slate-900 border border-amber-500/50 text-amber-300 text-center rounded px-2 py-1 focus:outline-none focus:border-amber-400">
+                    </div>
+                    <div class="col-span-2">
                       <input type="number" value="${set.reps || ''}" placeholder="0" 
                         onchange="updateSetVal(${exIndex}, ${setIndex}, 'reps', this.value)"
                         class="w-full bg-slate-900 border border-slate-700 text-center rounded px-2 py-1 focus:outline-none focus:border-brand-500">
                     </div>
-                    <div class="col-span-3 text-center font-mono text-xs text-indigo-400 font-semibold">
+                    <div class="col-span-2 text-center font-mono text-xs text-indigo-400 font-semibold">
                       ${setVol} kg
                     </div>
                     <div class="col-span-1 text-right">
@@ -758,6 +780,12 @@
           </div>
         `;
       }).join('');
+    }
+
+    function updateTargetReps(exIdx, val) {
+      const parsedVal = parseInt(val);
+      activeWorkoutExercises[exIdx].targetReps = isNaN(parsedVal) ? 10 : parsedVal;
+      renderActiveWorkout();
     }
 
     function updateSetVal(exIdx, setIdx, field, val) {
@@ -929,6 +957,7 @@
           type: exDb.type,
           loadType: exDb.loadType,
           muscle: exDb.muscle,
+          targetReps: 10,
           sets: [{ weight: 0, reps: 0 }]
         });
         renderEditHistoryModal();
@@ -1108,7 +1137,6 @@
       const dates = Array.from(dateSet).sort((a,b) => new Date(a) - new Date(b));
       const stackKeys = Array.from(stackKeysSet);
 
-      // Renderowanie podsumowania legendy (tonaż i % powtórzeń dla poszczególnych grup)
       if (stackKeys.length > 0) {
         let legendHtml = `<div class="flex flex-wrap gap-2 text-xs">`;
         stackKeys.forEach((key, index) => {
@@ -1202,7 +1230,11 @@
       const totalVolumes = [];
       const maxWeightReps = [];
       const totalRepsList = [];
+      const targetRepsTotalList = [];
+      const targetRepsPerSetList = [];
       const setsDetailsList = [];
+      let totalRepsAllSessions = 0;
+      let totalTargetRepsAllSessions = 0;
 
       logs.forEach(log => {
         const ex = log.exercises.find(e => e.exerciseId === exFilter);
@@ -1215,11 +1247,20 @@
           let vol = 0;
           let setStrs = [];
 
+          const tReps = ex.targetReps !== undefined ? ex.targetReps : 10;
+          const totTargetReps = tReps * ex.sets.length;
+          
+          targetRepsPerSetList.push(tReps);
+          targetRepsTotalList.push(totTargetReps);
+
           ex.sets.forEach(s => {
             const w = parseFloat(s.weight) || 0;
             const r = parseInt(s.reps) || 0;
             vol += (w * r);
             totR += r;
+
+            totalRepsAllSessions += r;
+            totalTargetRepsAllSessions += tReps;
 
             if (w > maxW) {
               maxW = w;
@@ -1228,7 +1269,7 @@
               maxR = r;
             }
 
-            setStrs.push(`${w}kg × ${r}`);
+            setStrs.push(`${w}kg × ${r}/${tReps}`);
           });
 
           maxWeights.push(maxW);
@@ -1239,7 +1280,10 @@
         }
       });
 
-      // Kalkulacja szczegółowych statystyk procentowych
+      const goalFulfillmentPct = totalTargetRepsAllSessions > 0 
+        ? Math.round((totalRepsAllSessions / totalTargetRepsAllSessions) * 1000) / 10 
+        : 0;
+
       if (labels.length >= 2) {
         const firstVol = totalVolumes[0];
         const lastVol = totalVolumes[totalVolumes.length - 1];
@@ -1259,14 +1303,18 @@
           <div>Progres tonażu (objętości): <strong class="${getClass(resVol.pct)} font-mono">${resVol.str}</strong> <span class="text-slate-400">(${firstVol} kg ➔ ${lastVol} kg)</span></div>
           <div>Progres max obciążenia: <strong class="${getClass(resMaxW.pct)} font-mono">${resMaxW.str}</strong> <span class="text-slate-400">(${firstMaxW} kg ➔ ${lastMaxW} kg)</span></div>
           <div>Progres ilości powtórzeń: <strong class="${getClass(resReps.pct)} font-mono">${resReps.str}</strong> <span class="text-slate-400">(${firstReps} powt. ➔ ${lastReps} powt.)</span></div>
+          <div class="pt-1 border-t border-slate-800/60 mt-1">Spełnienie celu powtórzeń (wszystkie serie): <strong class="text-amber-400 font-mono">${goalFulfillmentPct}%</strong> <span class="text-slate-400">(${totalRepsAllSessions} / ${totalTargetRepsAllSessions} powt.)</span></div>
         `;
       } else if (labels.length === 1) {
-        progressTextEl.innerHTML = `<span class="text-slate-400">Za mało serii dla tego ćwiczenia w wybranym okresie (wymagane min. 2 sesje).</span>`;
+        progressTextEl.innerHTML = `
+          <span class="text-slate-400">Za mało serii dla tego ćwiczenia w wybranym okresie (wymagane min. 2 sesje).</span>
+          <div class="pt-1 border-t border-slate-800/60 mt-1">Spełnienie celu powtórzeń (wszystkie serie): <strong class="text-amber-400 font-mono">${goalFulfillmentPct}%</strong> <span class="text-slate-400">(${totalRepsAllSessions} / ${totalTargetRepsAllSessions} powt.)</span></div>
+        `;
       } else {
         progressTextEl.innerHTML = `<span class="text-slate-500">Brak danych dla tego ćwiczenia w wybranym oknie czasowym.</span>`;
       }
 
-      // Wykres połączony (Combo Chart): Słupki (Tonaż) + Linie (Max Ciężar, Powtórzenia)
+      // Wykres ze wspólną osią y2 dla łącznej liczby powtórzeń oraz łącznego celu powtórzeń
       progressChartInstance = new Chart(ctx, {
         type: 'bar',
         data: {
@@ -1293,12 +1341,24 @@
             },
             {
               type: 'line',
-              label: 'Ilość powtórzeń (łącznie)',
+              label: 'Powtórzenia (łącznie)',
               data: totalRepsList,
               borderColor: '#34d399',
               backgroundColor: '#34d399',
               borderDash: [3, 3],
               tension: 0.2,
+              yAxisID: 'y2'
+            },
+            {
+              type: 'line',
+              label: 'Cel powtórzeń (łącznie)',
+              data: targetRepsTotalList,
+              borderColor: '#ef4444',
+              backgroundColor: '#ef4444',
+              borderDash: [5, 5],
+              pointStyle: 'circle',
+              radius: 3,
+              tension: 0,
               yAxisID: 'y2'
             }
           ]
@@ -1320,8 +1380,10 @@
                     return `Max Ciężar: ${context.parsed.y} kg (${maxWeightReps[idx]} powt. w max serii)`;
                   } else if (context.dataset.label.startsWith('Całkowity Tonaż')) {
                     return `Całkowity Tonaż: ${context.parsed.y} kg`;
-                  } else if (context.dataset.label.startsWith('Ilość powtórzeń')) {
+                  } else if (context.dataset.label.startsWith('Powtórzenia')) {
                     return `Łączna ilość powtórzeń: ${context.parsed.y}`;
+                  } else if (context.dataset.label.startsWith('Cel powtórzeń')) {
+                    return `Łączny cel powtórzeń: ${context.parsed.y} (${targetRepsPerSetList[idx]} / serię)`;
                   }
                   return context.dataset.label + ': ' + context.parsed.y;
                 },
@@ -1354,8 +1416,10 @@
             y2: { 
               type: 'linear',
               position: 'right', 
-              display: false,
-              grid: { display: false }
+              ticks: { color: '#34d399' },
+              grid: { display: false },
+			  grace: '5%',
+              title: { display: true, text: 'Powtórzenia / Cel', color: '#34d399', font: { size: 10 } }
             }
           }
         }
@@ -1387,10 +1451,11 @@
             <div class="grid grid-cols-1 md:grid-cols-2 gap-2 pt-1">
               ${log.exercises.map(ex => {
                 const muscle = getExerciseMuscle(ex);
+                const tReps = ex.targetReps !== undefined ? ex.targetReps : 10;
                 return `
                 <div class="text-xs bg-slate-900 p-2 rounded border border-slate-800">
                   <div class="flex items-center justify-between gap-1">
-                    <span class="font-semibold text-slate-300">${ex.name}</span>
+                    <span class="font-semibold text-slate-300">${ex.name} <span class="text-amber-400 font-normal text-[11px]">(Cel: ${tReps} powt/seria)</span></span>
                     <span class="text-[10px] bg-indigo-950 text-indigo-300 border border-indigo-800/60 px-1.5 py-0.5 rounded-full shrink-0">${muscle}</span>
                   </div>
                   <div class="text-slate-500 mt-1">
@@ -1455,17 +1520,22 @@
                 return `
                   <div class="grid grid-cols-12 gap-2 items-center text-xs">
                     <div class="col-span-2 text-center text-slate-400 font-bold">#${setIdx + 1}</div>
-                    <div class="col-span-4">
+                    <div class="col-span-3">
                       <input type="number" step="0.5" value="${set.weight || ''}" placeholder="0" 
                         onchange="updateHistorySetVal(${exIdx}, ${setIdx}, 'weight', this.value)"
                         class="w-full bg-slate-900 border border-slate-700 text-center rounded px-2 py-1 text-slate-100 focus:outline-none focus:border-brand-500">
                     </div>
-                    <div class="col-span-4">
+                    <div class="col-span-3">
+                      <input type="number" value="${ex.targetReps !== undefined ? ex.targetReps : 10}" placeholder="10" 
+                        onchange="updateHistoryTargetReps(${exIdx}, this.value)"
+                        class="w-full bg-slate-900 border border-amber-500/50 text-amber-300 text-center rounded px-2 py-1 text-slate-100 focus:outline-none focus:border-amber-400">
+                    </div>
+                    <div class="col-span-3">
                       <input type="number" value="${set.reps || ''}" placeholder="0" 
                         onchange="updateHistorySetVal(${exIdx}, ${setIdx}, 'reps', this.value)"
                         class="w-full bg-slate-900 border border-slate-700 text-center rounded px-2 py-1 text-slate-100 focus:outline-none focus:border-brand-500">
                     </div>
-                    <div class="col-span-2 text-right">
+                    <div class="col-span-1 text-right">
                       <button onclick="removeHistorySet(${exIdx}, ${setIdx})" class="text-slate-500 hover:text-red-400 font-bold px-1">✕</button>
                     </div>
                   </div>
@@ -1484,6 +1554,13 @@
           </div>
         `;
       }).join('');
+    }
+
+    function updateHistoryTargetReps(exIdx, val) {
+      if (!editingHistoryWorkout) return;
+      const parsedVal = parseInt(val);
+      editingHistoryWorkout.exercises[exIdx].targetReps = isNaN(parsedVal) ? 10 : parsedVal;
+      renderEditHistoryModal();
     }
 
     function updateHistorySetVal(exIdx, setIdx, field, val) {
