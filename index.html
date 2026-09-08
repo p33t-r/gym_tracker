@@ -374,7 +374,7 @@
     </div>
   </div>
 
-  <!-- MODAL: Wybór Ćwiczenia do Treningu -->
+  <!-- MODAL: Wybór Ćwiczenia do Treningu lub Szablonu -->
   <div id="modal-select-exercise" class="fixed inset-0 bg-black/70 backdrop-blur-sm hidden flex items-center justify-center z-50 p-4">
     <div class="bg-slate-900 border border-slate-800 rounded-2xl max-w-md w-full p-6 space-y-4">
       <h3 class="text-lg font-bold text-white">Wybierz Ćwiczenie z Bazy</h3>
@@ -398,9 +398,12 @@
         <input type="text" id="tpl-name" placeholder="np. FBW A, Push Day" class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brand-500">
       </div>
       <div>
-        <label class="block text-xs font-medium text-slate-400 mb-2">Wybierz ćwiczenia do szablonu</label>
-        <div id="tpl-exercise-checkboxes" class="space-y-2 max-h-48 overflow-y-auto border border-slate-800 p-3 rounded-lg bg-slate-950">
-          <!-- Checkboxy w JS -->
+        <div class="flex justify-between items-center mb-2">
+          <label class="block text-xs font-medium text-slate-400">Kolejność ćwiczeń w szablonie</label>
+          <button onclick="openAddExerciseModal('template')" class="text-xs text-brand-400 hover:underline font-medium">+ Dodaj ćwiczenie</button>
+        </div>
+        <div id="tpl-exercise-list" class="space-y-2 max-h-56 overflow-y-auto border border-slate-800 p-2 rounded-lg bg-slate-950">
+          <!-- Lista wyznaczających kolejność ćwiczeń w JS -->
         </div>
       </div>
       <div class="flex justify-end gap-2 pt-4 border-t border-slate-800">
@@ -436,6 +439,7 @@
     };
 
     let activeWorkoutExercises = [];
+    let currentTemplateExercises = []; // Tymczasowa lista ID ćwiczeń w modalu edycji szablonu
     let editingHistoryWorkout = null;
     let selectExerciseContext = 'workout';
     let currentImportType = null;
@@ -1132,6 +1136,9 @@
         addExerciseToCurrentWorkout(exDb);
         saveActiveWorkoutDraft();
         renderActiveWorkout();
+      } else if (selectExerciseContext === 'template') {
+        currentTemplateExercises.push(exId);
+        renderTemplateExercisesList();
       } else if (selectExerciseContext === 'history' && editingHistoryWorkout) {
         editingHistoryWorkout.exercises.push({
           instanceId: 'inst_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4),
@@ -1152,9 +1159,9 @@
     function renderTemplateDB() {
       const container = document.getElementById('template-db-list');
       container.innerHTML = db.templates.map(tpl => {
-        const exNames = tpl.exercises.map(eId => {
+        const exNames = tpl.exercises.map((eId, idx) => {
           const ex = db.exercises.find(e => e.id === eId);
-          return ex ? ex.name : 'Nieznane';
+          return ex ? `${idx + 1}. ${ex.name}` : `${idx + 1}. Nieznane`;
         }).join(', ');
 
         return `
@@ -1179,18 +1186,64 @@
       const tpl = editId ? db.templates.find(t => t.id === editId) : null;
       document.getElementById('tpl-name').value = tpl ? tpl.name : '';
 
-      const container = document.getElementById('tpl-exercise-checkboxes');
-      container.innerHTML = db.exercises.map(ex => {
-        const checked = tpl && tpl.exercises.includes(ex.id) ? 'checked' : '';
-        return `
-          <label class="flex items-center space-x-2 text-xs text-slate-300 cursor-pointer p-1 hover:bg-slate-900 rounded">
-            <input type="checkbox" value="${ex.id}" ${checked} class="tpl-ex-check rounded bg-slate-900 border-slate-700 text-brand-600 focus:ring-0">
-            <span>${ex.name} (${ex.muscle})</span>
-          </label>
-        `;
-      }).join('');
+      currentTemplateExercises = tpl ? [...tpl.exercises] : [];
+      renderTemplateExercisesList();
 
       openModal('modal-template');
+    }
+
+    function renderTemplateExercisesList() {
+      const container = document.getElementById('tpl-exercise-list');
+      if (currentTemplateExercises.length === 0) {
+        container.innerHTML = `
+          <div class="text-center py-6 text-xs text-slate-500">
+            Brak dodanych ćwiczeń do szablonu. Kliknij "+ Dodaj ćwiczenie", aby wybrać ćwiczenia z bazy.
+          </div>
+        `;
+        return;
+      }
+
+      container.innerHTML = currentTemplateExercises.map((exId, idx) => {
+        const ex = db.exercises.find(e => e.id === exId);
+        const name = ex ? ex.name : 'Nieznane ćwiczenie';
+        const muscle = ex ? ex.muscle : '';
+
+        return `
+          <div class="flex items-center justify-between p-2 bg-slate-900 border border-slate-800 rounded-lg text-xs">
+            <div class="flex items-center gap-2 overflow-hidden mr-2">
+              <span class="font-bold text-indigo-400 font-mono shrink-0">${idx + 1}.</span>
+              <span class="text-slate-200 font-medium truncate">${name}</span>
+              ${muscle ? `<span class="text-[10px] bg-slate-800 text-slate-400 px-1.5 py-0.5 rounded shrink-0">${muscle}</span>` : ''}
+            </div>
+            <div class="flex items-center gap-1 shrink-0">
+              <button onclick="moveTemplateExerciseUp(${idx})" ${idx === 0 ? 'disabled' : ''} class="text-slate-300 hover:text-white disabled:opacity-20 px-1.5 py-0.5 rounded bg-slate-950 border border-slate-800">↑</button>
+              <button onclick="moveTemplateExerciseDown(${idx})" ${idx === currentTemplateExercises.length - 1 ? 'disabled' : ''} class="text-slate-300 hover:text-white disabled:opacity-20 px-1.5 py-0.5 rounded bg-slate-950 border border-slate-800">↓</button>
+              <button onclick="removeTemplateExercise(${idx})" class="text-red-400 hover:text-red-300 px-1.5 py-0.5 rounded bg-red-950/30 border border-red-900/40 ml-1">✕</button>
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    function moveTemplateExerciseUp(idx) {
+      if (idx <= 0) return;
+      const temp = currentTemplateExercises[idx];
+      currentTemplateExercises[idx] = currentTemplateExercises[idx - 1];
+      currentTemplateExercises[idx - 1] = temp;
+      renderTemplateExercisesList();
+    }
+
+    function moveTemplateExerciseDown(idx) {
+      if (idx >= currentTemplateExercises.length - 1) return;
+      const temp = currentTemplateExercises[idx];
+      currentTemplateExercises[idx] = currentTemplateExercises[idx + 1];
+      currentTemplateExercises[idx + 1] = temp;
+      renderTemplateExercisesList();
+    }
+
+    function removeTemplateExercise(idx) {
+      currentTemplateExercises.splice(idx, 1);
+      renderTemplateExercisesList();
     }
 
     function editTemplateInDB(id) {
@@ -1200,16 +1253,15 @@
     function saveTemplateToDB() {
       const id = document.getElementById('tpl-edit-id').value;
       const name = document.getElementById('tpl-name').value.trim();
-      const selectedChecks = document.querySelectorAll('.tpl-ex-check:checked');
-      const selectedIds = Array.from(selectedChecks).map(c => c.value);
 
       if (!name) { alert("Podaj nazwę szablonu!"); return; }
+      if (currentTemplateExercises.length === 0) { alert("Dodaj co najmniej jedno ćwiczenie do szablonu!"); return; }
 
       if (id) {
         const tpl = db.templates.find(t => t.id === id);
-        if (tpl) { tpl.name = name; tpl.exercises = selectedIds; }
+        if (tpl) { tpl.name = name; tpl.exercises = [...currentTemplateExercises]; }
       } else {
-        db.templates.push({ id: 'tpl_' + Date.now(), name, exercises: selectedIds });
+        db.templates.push({ id: 'tpl_' + Date.now(), name, exercises: [...currentTemplateExercises] });
       }
 
       saveToStorage();
@@ -1564,7 +1616,7 @@
               pointStyle: 'circle',
               radius: 3,
               tension: 0,
-              yAxisID: 'y2'
+			  yAxisID: 'y2'
             }
           ]
         },
@@ -1573,31 +1625,19 @@
           maintainAspectRatio: false,
           plugins: {
             legend: {
-              display: true,
+			  display: true,
               position: 'bottom',
               labels: { color: '#94a3b8', boxWidth: 12, font: { size: 11 } }
             },
             tooltip: {
               callbacks: {
-                label: function(context) {
-                  const idx = context.dataIndex;
-                  if (context.dataset.label.startsWith('Max Ciężar')) {
-                    return `Max Ciężar: ${context.parsed.y} kg (${maxWeightReps[idx]} powt. w max serii)`;
-                  } else if (context.dataset.label.startsWith('Całkowity Tonaż')) {
-                    return `Całkowity Tonaż: ${context.parsed.y} kg`;
-                  } else if (context.dataset.label.startsWith('Powtórzenia')) {
-                    return `Łączna ilość powtórzeń: ${context.parsed.y}`;
-                  } else if (context.dataset.label.startsWith('Cel powtórzeń')) {
-                    return `Łączny cel powtórzeń: ${context.parsed.y} (${targetRepsPerSetList[idx]} / serię)`;
-                  }
-                  return context.dataset.label + ': ' + context.parsed.y;
-                },
-                afterBody: function(context) {
-                  const idx = context[0].dataIndex;
-                  if (setsDetailsList[idx]) {
-                    return 'Serie: ' + setsDetailsList[idx];
-                  }
-                  return '';
+                afterBody: (tooltipItems) => {
+                  const idx = tooltipItems[0].dataIndex;
+                  return [
+                    `Najcięższa seria: ${maxWeights[idx]} kg × ${maxWeightReps[idx]} powt.`,
+                    `Cel powtórzeń/serię: ${targetRepsPerSetList[idx]}`,
+                    `Wszystkie serie: ${setsDetailsList[idx]}`
+                  ];
                 }
               }
             }
@@ -1634,40 +1674,45 @@
     function renderHistoryList(logs) {
       const container = document.getElementById('history-list');
       if (logs.length === 0) {
-        container.innerHTML = '<p class="text-xs text-slate-500 py-4 text-center">Brak treningów w wybranym przedziale czasowym.</p>';
+        container.innerHTML = `<p class="text-xs text-slate-500 py-4 text-center">Brak wpisów w historii dla podanych filtrów.</p>`;
         return;
       }
 
-      const reversedLogs = [...logs].reverse();
-      container.innerHTML = reversedLogs.map(log => {
-        const totalTon = log.exercises.reduce((acc, ex) => 
-          acc + ex.sets.reduce((sAcc, s) => sAcc + ((parseFloat(s.weight)||0)*(parseInt(s.reps)||0)), 0), 0);
+      const sortedLogs = [...logs].sort((a,b) => new Date(b.date) - new Date(a.date));
+
+      container.innerHTML = sortedLogs.map(log => {
+        const totalLogTonnage = log.exercises.reduce((acc, ex) => {
+          return acc + ex.sets.reduce((sAcc, s) => sAcc + ((s.weight || 0) * (s.reps || 0)), 0);
+        }, 0);
 
         return `
-          <div class="bg-slate-950 border border-slate-800 rounded-xl p-4 space-y-2">
+          <div class="bg-slate-950 border border-slate-800 rounded-xl p-4 space-y-3">
             <div class="flex justify-between items-center border-b border-slate-800/80 pb-2">
-              <span class="font-bold text-sm text-indigo-400">${log.date}</span>
-              <div class="flex items-center gap-3">
-                <span class="text-xs text-slate-400">Suma: <strong class="text-slate-200 font-mono">${totalTon} kg</strong></span>
-                <button onclick="openEditHistoryModal('${log.id}')" class="text-xs text-indigo-400 hover:text-indigo-300 font-medium">Edytuj</button>
-                <button onclick="deleteLog('${log.id}')" class="text-xs text-red-400 hover:underline">Usuń</button>
+              <div>
+                <span class="text-sm font-bold text-slate-200">📅 ${log.date}</span>
+                <span class="ml-3 text-xs text-indigo-400 font-mono font-semibold">Tonaż: ${totalLogTonnage} kg</span>
+              </div>
+              <div class="flex gap-2">
+                <button onclick="openEditHistoryModal('${log.id}')" class="text-xs text-slate-300 hover:text-white px-2 py-1 bg-slate-900 border border-slate-700 rounded transition">Edytuj</button>
+                <button onclick="deleteHistoryLog('${log.id}')" class="text-xs text-red-400 hover:text-red-300 px-2 py-1 bg-red-950/30 border border-red-900/40 rounded transition">Usuń</button>
               </div>
             </div>
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-2 pt-1">
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
               ${log.exercises.map(ex => {
-                const muscle = getExerciseMuscle(ex);
+                const exVol = ex.sets.reduce((sum, s) => sum + ((s.weight || 0) * (s.reps || 0)), 0);
                 const tReps = ex.targetReps !== undefined ? ex.targetReps : 10;
+                const setsStr = ex.sets.map(s => `${s.weight}kg × ${s.reps}/${tReps}`).join(', ');
+
                 return `
-                <div class="text-xs bg-slate-900 p-2 rounded border border-slate-800">
-                  <div class="flex items-center justify-between gap-1">
-                    <span class="font-semibold text-slate-300">${ex.name} <span class="text-amber-400 font-normal text-[11px]">(Cel: ${tReps} powt/seria)</span></span>
-                    <span class="text-[10px] bg-indigo-950 text-indigo-300 border border-indigo-800/60 px-1.5 py-0.5 rounded-full shrink-0">${muscle}</span>
+                  <div class="bg-slate-900/60 p-2.5 rounded-lg border border-slate-800/60 text-xs">
+                    <div class="font-bold text-slate-300 mb-1 flex justify-between">
+                      <span>${ex.name}</span>
+                      <span class="text-indigo-400 font-mono">${exVol}kg</span>
+                    </div>
+                    <div class="text-[11px] text-slate-400 font-mono">${setsStr}</div>
                   </div>
-                  <div class="text-slate-500 mt-1">
-                    ${ex.sets.map(s => `${s.weight}kg × ${s.reps}`).join(' | ')}
-                  </div>
-                </div>
-              `;
+                `;
               }).join('')}
             </div>
           </div>
@@ -1675,120 +1720,84 @@
       }).join('');
     }
 
-    function deleteLog(logId) {
+    function deleteHistoryLog(id) {
       if (!confirm("Czy na pewno chcesz usunąć ten trening z historii?")) return;
-      db.logs = db.logs.filter(l => l.id !== logId);
+      db.logs = db.logs.filter(l => l.id !== id);
       saveToStorage();
       updateAnalytics();
     }
 
-    // --- EDYCJA TRENINGÓW W HISTORII ---
+    // --- EDYCJA HISTORII TRENINGU ---
     function openEditHistoryModal(logId) {
       const log = db.logs.find(l => l.id === logId);
       if (!log) return;
 
       editingHistoryWorkout = JSON.parse(JSON.stringify(log));
       document.getElementById('edit-history-date').value = editingHistoryWorkout.date;
-      
+
       renderEditHistoryModal();
       openModal('modal-edit-history');
     }
 
     function renderEditHistoryModal() {
-      if (!editingHistoryWorkout) return;
       const container = document.getElementById('edit-history-exercises-container');
-
-      if (editingHistoryWorkout.exercises.length === 0) {
-        container.innerHTML = `<p class="text-xs text-slate-500 py-4 text-center">Brak ćwiczeń w tym treningu. Dodaj ćwiczenie z bazy poniżej.</p>`;
+      if (!editingHistoryWorkout || editingHistoryWorkout.exercises.length === 0) {
+        container.innerHTML = `<p class="text-xs text-slate-500 py-4 text-center">Brak ćwiczeń w tym wpisie.</p>`;
         return;
       }
 
       container.innerHTML = editingHistoryWorkout.exercises.map((ex, exIdx) => {
-        const exVol = ex.sets.reduce((sum, s) => sum + ((parseFloat(s.weight)||0) * (parseInt(s.reps)||0)), 0);
-
         return `
-          <div class="bg-slate-950 border border-slate-800 rounded-xl p-3 space-y-3">
-            <div class="flex justify-between items-center border-b border-slate-800/80 pb-2">
-              <div>
-                <h4 class="font-bold text-sm text-slate-200">${ex.name}</h4>
-                <div class="text-[10px] text-slate-400">${ex.muscle || ''}</div>
-              </div>
-              <button onclick="removeExerciseFromHistoryEdit(${exIdx})" class="text-red-400 hover:text-red-300 text-xs px-2 py-0.5 rounded bg-red-950/40 border border-red-900/50">
-                Usuń Ćwiczenie
-              </button>
+          <div class="bg-slate-950 border border-slate-800 p-3 rounded-xl space-y-3">
+            <div class="flex justify-between items-center">
+              <span class="font-bold text-sm text-slate-200">${exIdx + 1}. ${ex.name}</span>
+              <button onclick="removeExerciseFromHistoryModal(${exIdx})" class="text-xs text-red-400 hover:text-red-300">Usuń</button>
             </div>
 
-            <!-- Serie -->
             <div class="space-y-2">
-              ${ex.sets.map((set, setIdx) => {
-                return `
-                  <div class="grid grid-cols-12 gap-2 items-center text-xs">
-                    <div class="col-span-2 text-center text-slate-400 font-bold">#${setIdx + 1}</div>
-                    <div class="col-span-3">
-                      <input type="number" step="0.5" value="${set.weight !== undefined ? set.weight : ''}" placeholder="0" 
-                        onchange="updateHistorySetVal(${exIdx}, ${setIdx}, 'weight', this.value)"
-                        class="w-full bg-slate-900 border border-slate-700 text-center rounded px-2 py-1 text-slate-100 focus:outline-none focus:border-brand-500">
-                    </div>
-                    <div class="col-span-3">
-                      <input type="number" value="${ex.targetReps !== undefined ? ex.targetReps : 10}" placeholder="10" 
-                        onchange="updateHistoryTargetReps(${exIdx}, this.value)"
-                        class="w-full bg-slate-900 border border-amber-500/50 text-amber-300 text-center rounded px-2 py-1 focus:outline-none focus:border-amber-400">
-                    </div>
-                    <div class="col-span-3">
-                      <input type="number" value="${set.reps !== undefined ? set.reps : ''}" placeholder="0" 
-                        onchange="updateHistorySetVal(${exIdx}, ${setIdx}, 'reps', this.value)"
-                        class="w-full bg-slate-900 border border-slate-700 text-center rounded px-2 py-1 text-slate-100 focus:outline-none focus:border-brand-500">
-                    </div>
-                    <div class="col-span-1 text-right">
-                      <button onclick="removeHistorySet(${exIdx}, ${setIdx})" class="text-slate-500 hover:text-red-400 font-bold px-1">✕</button>
-                    </div>
-                  </div>
-                `;
-              }).join('')}
+              ${ex.sets.map((set, setIdx) => `
+                <div class="flex items-center gap-2 text-xs">
+                  <span class="text-slate-500 font-bold w-8">#${setIdx + 1}</span>
+                  <input type="number" step="0.5" value="${set.weight}" onchange="updateHistorySetVal(${exIdx}, ${setIdx}, 'weight', this.value)" placeholder="kg" class="w-20 bg-slate-900 border border-slate-700 rounded px-2 py-1 text-slate-100">
+                  <span class="text-slate-400">kg ×</span>
+                  <input type="number" value="${set.reps}" onchange="updateHistorySetVal(${exIdx}, ${setIdx}, 'reps', this.value)" placeholder="powt." class="w-20 bg-slate-900 border border-slate-700 rounded px-2 py-1 text-slate-100">
+                  <span class="text-slate-400">/ cel:</span>
+                  <input type="number" value="${ex.targetReps !== undefined ? ex.targetReps : 10}" onchange="updateHistoryTargetRepsVal(${exIdx}, this.value)" placeholder="10" class="w-16 bg-slate-900 border border-amber-500/50 text-amber-300 rounded px-2 py-1">
+                  <button onclick="removeSetFromHistoryModal(${exIdx}, ${setIdx})" class="text-slate-500 hover:text-red-400 font-bold ml-auto">✕</button>
+                </div>
+              `).join('')}
             </div>
 
-            <div class="flex justify-between items-center pt-2 text-xs">
-              <button onclick="addHistorySet(${exIdx})" class="text-brand-400 hover:text-brand-300 font-medium">+ Dodaj serię</button>
-              <span class="text-slate-400">Suma: <strong class="text-indigo-300 font-mono">${exVol} kg</strong></span>
-            </div>
+            <button onclick="addSetToHistoryModal(${exIdx})" class="text-xs text-brand-400 hover:underline font-medium">+ Dodaj serię</button>
           </div>
         `;
       }).join('');
     }
 
-    function updateHistoryTargetReps(exIdx, val) {
+    function updateHistoryTargetRepsVal(exIdx, val) {
       if (!editingHistoryWorkout) return;
-      const parsedVal = parseInt(val);
-      editingHistoryWorkout.exercises[exIdx].targetReps = isNaN(parsedVal) ? 10 : parsedVal;
+      const parsed = parseInt(val);
+      editingHistoryWorkout.exercises[exIdx].targetReps = isNaN(parsed) ? 10 : parsed;
     }
 
     function updateHistorySetVal(exIdx, setIdx, field, val) {
       if (!editingHistoryWorkout) return;
-      const ex = editingHistoryWorkout.exercises[exIdx];
-      if (ex && ex.sets[setIdx]) {
-        ex.sets[setIdx][field] = val !== '' ? parseFloat(val) : 0;
-      }
+      editingHistoryWorkout.exercises[exIdx].sets[setIdx][field] = parseFloat(val) || 0;
     }
 
-    function addHistorySet(exIdx) {
+    function addSetToHistoryModal(exIdx) {
       if (!editingHistoryWorkout) return;
-      const ex = editingHistoryWorkout.exercises[exIdx];
-      let lastW = 0, lastR = 0;
-      if (ex.sets.length > 0) {
-        lastW = ex.sets[ex.sets.length - 1].weight || 0;
-        lastR = ex.sets[ex.sets.length - 1].reps || 0;
-      }
-      ex.sets.push({ weight: lastW, reps: lastR });
+      editingHistoryWorkout.exercises[exIdx].sets.push({ weight: 0, reps: 0 });
       renderEditHistoryModal();
     }
 
-    function removeHistorySet(exIdx, setIdx) {
+    function removeSetFromHistoryModal(exIdx, setIdx) {
       if (!editingHistoryWorkout) return;
       editingHistoryWorkout.exercises[exIdx].sets.splice(setIdx, 1);
       renderEditHistoryModal();
     }
 
-    function removeExerciseFromHistoryEdit(exIdx) {
+    function removeExerciseFromHistoryModal(exIdx) {
       if (!editingHistoryWorkout) return;
       editingHistoryWorkout.exercises.splice(exIdx, 1);
       renderEditHistoryModal();
@@ -1796,16 +1805,16 @@
 
     function saveEditedHistoryWorkout() {
       if (!editingHistoryWorkout) return;
-      
-      editingHistoryWorkout.date = document.getElementById('edit-history-date').value;
-      
+
+      editingHistoryWorkout.date = document.getElementById('edit-history-date').value || editingHistoryWorkout.date;
+
       const idx = db.logs.findIndex(l => l.id === editingHistoryWorkout.id);
       if (idx !== -1) {
         db.logs[idx] = editingHistoryWorkout;
         saveToStorage();
-        closeModal('modal-edit-history');
         updateAnalytics();
-        alert("Zmiany zostały zapisane!");
+        closeModal('modal-edit-history');
+        editingHistoryWorkout = null;
       }
     }
   </script>
