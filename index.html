@@ -441,6 +441,14 @@
     let tonnageChartInstance = null;
     let progressChartInstance = null;
 
+    function openModal(modalId) {
+      document.getElementById(modalId).classList.remove('hidden');
+    }
+
+    function closeModal(modalId) {
+      document.getElementById(modalId).classList.add('hidden');
+    }
+
     function getExerciseMuscle(ex) {
       if (ex.muscle) return ex.muscle;
       const found = db.exercises.find(e => e.id === ex.exerciseId);
@@ -717,106 +725,16 @@
     }
 
     function renderActiveWorkout() {
-	  const container = document.getElementById('workout-exercises-container');
-	  if (activeWorkoutExercises.length === 0) {
-	    container.innerHTML = `
-	      <div class="text-center py-12 border-2 border-dashed border-slate-800 rounded-xl">
-	        <p class="text-slate-500 text-sm">Brak ćwiczeń w aktualnej sesji.</p>
-	        <p class="text-slate-600 text-xs mt-1">Wczytaj szablon lub dodaj ćwiczenie poniżej.</p>
-	      </div>
-	    `;
-	    return;
-	  }
-	
-	  container.innerHTML = activeWorkoutExercises.map((ex, exIndex) => {
-	    const exTotalVolume = ex.sets.reduce((acc, s) => {
-	      const w = s.weight !== '' ? parseFloat(s.weight) : (s.defaultWeight || 0);
-	      const r = s.reps !== '' ? parseInt(s.reps) : (s.defaultReps || 0);
-	      return acc + (w * r);
-	    }, 0);
-	
-	    return `
-	      <div class="bg-slate-950 border border-slate-800 rounded-xl p-4 space-y-3">
-	        <div class="flex justify-between items-start">
-	          <div>
-	            <h4 class="font-bold text-base text-slate-100">${ex.name}</h4>
-	            <div class="flex flex-wrap gap-2 mt-1">
-	              <span class="text-[10px] bg-indigo-950 text-indigo-300 border border-indigo-800 px-2 py-0.5 rounded-full">${ex.muscle}</span>
-	              <span class="text-[10px] bg-slate-800 text-slate-400 px-2 py-0.5 rounded-full">${ex.type}</span>
-	              <span class="text-[10px] bg-slate-800 text-slate-400 px-2 py-0.5 rounded-full">${ex.loadType}</span>
-	            </div>
-	          </div>
-	          <div class="flex items-center gap-1.5">
-	            <button onclick="moveExerciseUp(${exIndex})" ${exIndex === 0 ? 'disabled' : ''} class="text-slate-300 hover:text-white disabled:opacity-30 disabled:hover:text-slate-300 text-xs px-2 py-1 rounded bg-slate-900 border border-slate-800 transition" title="Przesuń w górę">
-	              ↑
-	            </button>
-	            <button onclick="moveExerciseDown(${exIndex})" ${exIndex === activeWorkoutExercises.length - 1 ? 'disabled' : ''} class="text-slate-300 hover:text-white disabled:opacity-30 disabled:hover:text-slate-300 text-xs px-2 py-1 rounded bg-slate-900 border border-slate-800 transition" title="Przesuń w dół">
-	              ↓
-	            </button>
-	            <button onclick="removeExerciseFromWorkout(${exIndex})" class="text-red-400 hover:text-red-300 text-xs px-2 py-1 rounded bg-red-950/40 border border-red-900/50">
-	              Usuń
-	            </button>
-	          </div>
-	        </div>
-	
-	        <!-- Nagłówki Serii -->
-	        <div class="grid grid-cols-12 gap-2 text-xs font-semibold text-slate-400 border-b border-slate-800 pb-2 pt-2">
-	          <div class="col-span-2 text-center">Seria</div>
-	          <div class="col-span-3 text-center">Ciężar [kg]</div>
-	          <div class="col-span-2 text-center">Cel (Powtórzenia)</div>
-	          <div class="col-span-2 text-center">Powtórzenia</div>
-	          <div class="col-span-2 text-center">Wynik [kg]</div>
-	          <div class="col-span-1"></div>
-	        </div>
-	
-	        <!-- Lista Serii -->
-	        <div class="space-y-2">
-	          ${ex.sets.map((set, setIndex) => {
-	            const effectiveWeight = set.weight !== '' ? parseFloat(set.weight) : (set.defaultWeight || 0);
-	            const effectiveReps = set.reps !== '' ? parseInt(set.reps) : (set.defaultReps || 0);
-	            const setVol = effectiveWeight * effectiveReps;
-	            
-	            return `
-	              <div id="set-row-${exIndex}-${setIndex}" class="grid grid-cols-12 gap-2 items-center text-sm">
-	                <div class="col-span-2 text-center font-bold text-slate-400">#${setIndex + 1}</div>
-	                <div class="col-span-3">
-	                  <input type="number" step="0.5" value="${set.weight}" placeholder="${set.defaultWeight !== undefined ? set.defaultWeight : 0}" 
-	                    oninput="updateSetVal(${exIndex}, ${setIndex}, 'weight', this.value)"
-	                    class="w-full bg-slate-900 border border-slate-700 text-center rounded px-2 py-1 text-slate-100 placeholder-slate-500 focus:outline-none focus:border-brand-500">
-	                </div>
-	                <div class="col-span-2">
-	                  <input type="number" value="${ex.targetReps !== undefined ? ex.targetReps : 10}" placeholder="10" 
-	                    onchange="updateTargetReps(${exIndex}, this.value)"
-	                    class="w-full bg-slate-900 border border-amber-500/50 text-amber-300 text-center rounded px-2 py-1 focus:outline-none focus:border-amber-400">
-	                </div>
-	                <div class="col-span-2">
-	                  <input type="number" value="${set.reps}" placeholder="${set.defaultReps !== undefined ? set.defaultReps : 0}" 
-	                    oninput="updateSetVal(${exIndex}, ${setIndex}, 'reps', this.value)"
-	                    class="w-full bg-slate-900 border border-slate-700 text-center rounded px-2 py-1 text-slate-100 placeholder-slate-500 focus:outline-none focus:border-brand-500">
-	                </div>
-	                <div class="col-span-2 text-center font-mono text-xs text-indigo-400 font-semibold set-vol-display">
-	                  ${setVol} kg
-	                </div>
-	                <div class="col-span-1 text-right">
-	                  <button onclick="removeSet(${exIndex}, ${setIndex})" class="text-slate-500 hover:text-red-400 font-bold px-1">✕</button>
-	                </div>
-	              </div>
-	            `;
-	          }).join('')}
-	        </div>
-	
-	        <div class="flex justify-between items-center pt-3 border-t border-slate-800/60 text-xs">
-	          <button onclick="addSet(${exIndex})" class="text-brand-400 hover:text-brand-300 font-medium">
-	            + Dodaj serię
-	          </button>
-	          <div class="text-slate-400">
-	            Suma ćwiczenia: <span id="ex-total-${exIndex}" class="font-bold text-indigo-300 font-mono">${exTotalVolume} kg</span>
-	          </div>
-	        </div>
-	      </div>
-	    `;
-	  }).join('');
-	}
+      const container = document.getElementById('workout-exercises-container');
+      if (activeWorkoutExercises.length === 0) {
+        container.innerHTML = `
+          <div class="text-center py-12 border-2 border-dashed border-slate-800 rounded-xl">
+            <p class="text-slate-500 text-sm">Brak ćwiczeń w aktualnej sesji.</p>
+            <p class="text-slate-600 text-xs mt-1">Wczytaj szablon lub dodaj ćwiczenie poniżej.</p>
+          </div>
+        `;
+        return;
+      }
 
       container.innerHTML = activeWorkoutExercises.map((ex, exIndex) => {
         const exTotalVolume = ex.sets.reduce((acc, s) => {
@@ -826,7 +744,7 @@
         }, 0);
 
         return `
-          <div class="bg-slate-950 border border-slate-800 rounded-xl p-4 space-y-3">
+          <div class="bg-slate-950 border border-slate-800 rounded-xl p-4 space-y-3" id="ex-card-${exIndex}">
             <div class="flex justify-between items-start">
               <div>
                 <h4 class="font-bold text-base text-slate-100">${ex.name}</h4>
@@ -871,7 +789,7 @@
                     <div class="col-span-2 text-center font-bold text-slate-400">#${setIndex + 1}</div>
                     <div class="col-span-3">
                       <input type="number" step="0.5" value="${set.weight}" placeholder="${set.defaultWeight !== undefined ? set.defaultWeight : 0}" 
-                        oninput="updateSetVal(${exIndex}, ${setIndex}, 'weight', this.value)"
+                        onchange="updateSetVal(${exIndex}, ${setIndex}, 'weight', this.value, this)"
                         class="w-full bg-slate-900 border border-slate-700 text-center rounded px-2 py-1 text-slate-100 placeholder-slate-500 focus:outline-none focus:border-brand-500">
                     </div>
                     <div class="col-span-2">
@@ -881,10 +799,10 @@
                     </div>
                     <div class="col-span-2">
                       <input type="number" value="${set.reps}" placeholder="${set.defaultReps !== undefined ? set.defaultReps : 0}" 
-                        oninput="updateSetVal(${exIndex}, ${setIndex}, 'reps', this.value)"
+                        onchange="updateSetVal(${exIndex}, ${setIndex}, 'reps', this.value, this)"
                         class="w-full bg-slate-900 border border-slate-700 text-center rounded px-2 py-1 text-slate-100 placeholder-slate-500 focus:outline-none focus:border-brand-500">
                     </div>
-                    <div class="col-span-2 text-center font-mono text-xs text-indigo-400 font-semibold">
+                    <div class="col-span-2 text-center font-mono text-xs text-indigo-400 font-semibold" id="set-vol-${exIndex}-${setIndex}">
                       ${setVol} kg
                     </div>
                     <div class="col-span-1 text-right">
@@ -900,7 +818,7 @@
                 + Dodaj serię
               </button>
               <div class="text-slate-400">
-                Suma ćwiczenia: <span class="font-bold text-indigo-300 font-mono">${exTotalVolume} kg</span>
+                Suma ćwiczenia: <span class="font-bold text-indigo-300 font-mono" id="ex-total-vol-${exIndex}">${exTotalVolume} kg</span>
               </div>
             </div>
           </div>
@@ -911,36 +829,32 @@
     function updateTargetReps(exIdx, val) {
       const parsedVal = parseInt(val);
       activeWorkoutExercises[exIdx].targetReps = isNaN(parsedVal) ? 10 : parsedVal;
-      renderActiveWorkout();
     }
 
-    function updateSetVal(exIdx, setIdx, field, val) {
-	  // 1. Zapisz nową wartość w stanie aplikacji
-	  activeWorkoutExercises[exIdx].sets[setIdx][field] = val;
-	
-	  // 2. Punktowo przelicz tonaż zmienionej serii oraz całego ćwiczenia bez ponownego renderowania HTML!
-	  const setEl = document.getElementById(`set-row-${exIdx}-${setIdx}`);
-	  if (setEl) {
-	    const s = activeWorkoutExercises[exIdx].sets[setIdx];
-	    const w = s.weight !== '' ? parseFloat(s.weight) : (s.defaultWeight || 0);
-	    const r = s.reps !== '' ? parseInt(s.reps) : (s.defaultReps || 0);
-	    const setVol = w * r;
-	
-	    // Aktualizacja tonażu serii
-	    const volSpan = setEl.querySelector('.set-vol-display');
-	    if (volSpan) volSpan.textContent = `${setVol} kg`;
-	  }
-	
-	  // Aktualizacja sumy całkowitej ćwiczenia
-	  const exTotalVolume = activeWorkoutExercises[exIdx].sets.reduce((acc, s) => {
-	    const w = s.weight !== '' ? parseFloat(s.weight) : (s.defaultWeight || 0);
-	    const r = s.reps !== '' ? parseInt(s.reps) : (s.defaultReps || 0);
-	    return acc + (w * r);
-	  }, 0);
-	
-	  const totalSpan = document.getElementById(`ex-total-${exIdx}`);
-	  if (totalSpan) totalSpan.textContent = `${exTotalVolume} kg`;
-	}
+    function updateSetVal(exIdx, setIdx, field, val, inputEl) {
+      activeWorkoutExercises[exIdx].sets[setIdx][field] = val;
+      
+      const set = activeWorkoutExercises[exIdx].sets[setIdx];
+      const effectiveWeight = set.weight !== '' ? parseFloat(set.weight) : (set.defaultWeight || 0);
+      const effectiveReps = set.reps !== '' ? parseInt(set.reps) : (set.defaultReps || 0);
+      const setVol = (isNaN(effectiveWeight) ? 0 : effectiveWeight) * (isNaN(effectiveReps) ? 0 : effectiveReps);
+
+      const setVolEl = document.getElementById(`set-vol-${exIdx}-${setIdx}`);
+      if (setVolEl) {
+        setVolEl.innerText = `${setVol} kg`;
+      }
+
+      const exTotalVolume = activeWorkoutExercises[exIdx].sets.reduce((acc, s) => {
+        const w = s.weight !== '' ? parseFloat(s.weight) : (s.defaultWeight || 0);
+        const r = s.reps !== '' ? parseInt(s.reps) : (s.defaultReps || 0);
+        return acc + ((isNaN(w) ? 0 : w) * (isNaN(r) ? 0 : r));
+      }, 0);
+
+      const exTotalVolEl = document.getElementById(`ex-total-vol-${exIdx}`);
+      if (exTotalVolEl) {
+        exTotalVolEl.innerText = `${exTotalVolume} kg`;
+      }
+    }
 
     function addSet(exIdx) {
       const sets = activeWorkoutExercises[exIdx].sets;
@@ -1514,7 +1428,6 @@
         progressTextEl.innerHTML = `<span class="text-slate-500">Brak danych dla tego ćwiczenia w wybranym oknie czasowym.</span>`;
       }
 
-      // Wykres ze wspólną oś y2 dla łącznej liczby powtórzeń oraz łącznego celu powtórzeń
       progressChartInstance = new Chart(ctx, {
         type: 'bar',
         data: {
@@ -1618,7 +1531,7 @@
               position: 'right', 
               ticks: { color: '#34d399' },
               grid: { display: false },
-			  grace: '5%',
+              grace: '5%',
               title: { display: true, text: 'Powtórzenia / Cel', color: '#34d399', font: { size: 10 } }
             }
           }
@@ -1716,7 +1629,6 @@
             <!-- Serie -->
             <div class="space-y-2">
               ${ex.sets.map((set, setIdx) => {
-                const setVol = (parseFloat(set.weight) || 0) * (parseInt(set.reps) || 0);
                 return `
                   <div class="grid grid-cols-12 gap-2 items-center text-xs">
                     <div class="col-span-2 text-center text-slate-400 font-bold">#${setIdx + 1}</div>
@@ -1728,7 +1640,7 @@
                     <div class="col-span-3">
                       <input type="number" value="${ex.targetReps !== undefined ? ex.targetReps : 10}" placeholder="10" 
                         onchange="updateHistoryTargetReps(${exIdx}, this.value)"
-                        class="w-full bg-slate-900 border border-amber-500/50 text-amber-300 text-center rounded px-2 py-1 text-slate-100 focus:outline-none focus:border-amber-400">
+                        class="w-full bg-slate-900 border border-amber-500/50 text-amber-300 text-center rounded px-2 py-1 focus:outline-none focus:border-amber-400">
                     </div>
                     <div class="col-span-3">
                       <input type="number" value="${set.reps !== undefined ? set.reps : ''}" placeholder="0" 
@@ -1760,20 +1672,22 @@
       if (!editingHistoryWorkout) return;
       const parsedVal = parseInt(val);
       editingHistoryWorkout.exercises[exIdx].targetReps = isNaN(parsedVal) ? 10 : parsedVal;
-      renderEditHistoryModal();
     }
 
     function updateHistorySetVal(exIdx, setIdx, field, val) {
       if (!editingHistoryWorkout) return;
-      editingHistoryWorkout.exercises[exIdx].sets[setIdx][field] = parseFloat(val) || 0;
-      renderEditHistoryModal();
+      editingHistoryWorkout.exercises[exIdx].sets[setIdx][field] = val;
     }
 
     function addHistorySet(exIdx) {
       if (!editingHistoryWorkout) return;
       const sets = editingHistoryWorkout.exercises[exIdx].sets;
-      const lastSet = sets.length > 0 ? sets[sets.length - 1] : { weight: 0, reps: 0 };
-      sets.push({ weight: lastSet.weight, reps: lastSet.reps });
+      let lastW = 0, lastR = 0;
+      if (sets.length > 0) {
+        lastW = sets[sets.length - 1].weight || 0;
+        lastR = sets[sets.length - 1].reps || 0;
+      }
+      sets.push({ weight: lastW, reps: lastR });
       renderEditHistoryModal();
     }
 
@@ -1792,28 +1706,29 @@
     function saveEditedHistoryWorkout() {
       if (!editingHistoryWorkout) return;
 
-      const newDate = document.getElementById('edit-history-date').value;
-      if (!newDate) {
-        alert("Podaj datę treningu!");
+      const dateVal = document.getElementById('edit-history-date').value;
+      if (!dateVal) {
+        alert("Wprowadź prawidłową datę!");
         return;
       }
 
-      editingHistoryWorkout.date = newDate;
+      editingHistoryWorkout.date = dateVal;
+      editingHistoryWorkout.exercises.forEach(ex => {
+        ex.sets.forEach(s => {
+          s.weight = parseFloat(s.weight) || 0;
+          s.reps = parseInt(s.reps) || 0;
+        });
+      });
 
       const logIndex = db.logs.findIndex(l => l.id === editingHistoryWorkout.id);
       if (logIndex !== -1) {
-        db.logs[logIndex] = JSON.parse(JSON.stringify(editingHistoryWorkout));
+        db.logs[logIndex] = editingHistoryWorkout;
         saveToStorage();
+        alert("Zmiany w historii zostały zapisane!");
+        closeModal('modal-edit-history');
         updateAnalytics();
       }
-
-      closeModal('modal-edit-history');
-      editingHistoryWorkout = null;
     }
-
-    // --- MODALE HELPERS ---
-    function openModal(id) { document.getElementById(id).classList.remove('hidden'); }
-    function closeModal(id) { document.getElementById(id).classList.add('hidden'); }
   </script>
 </body>
 </html>
