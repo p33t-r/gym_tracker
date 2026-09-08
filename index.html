@@ -68,7 +68,7 @@
             <p class="text-xs text-slate-400">Wybierz preset lub utwórz trening od zera</p>
           </div>
           <div class="flex flex-wrap items-center gap-3">
-            <input type="date" id="workout-date" class="bg-slate-950 border border-slate-700 text-slate-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brand-500">
+            <input type="date" id="workout-date" onchange="saveActiveWorkoutDraft()" class="bg-slate-950 border border-slate-700 text-slate-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brand-500">
             <select id="preset-select" class="bg-slate-950 border border-slate-700 text-slate-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brand-500">
               <option value="">-- Wybierz szablon --</option>
             </select>
@@ -414,6 +414,7 @@
   <script>
     // --- STAN APLIKACJI I BAZA LOKALNA ---
     const STORAGE_KEY = 'gym_tracker_pro_db_v1';
+    const DRAFT_KEY = 'gym_tracker_active_draft_v1';
     
     const STACK_COLORS = [
       '#6366f1', '#38bdf8', '#10b981', '#f59e0b', '#ec4899', 
@@ -459,6 +460,7 @@
     window.addEventListener('DOMContentLoaded', () => {
       loadFromStorage();
       document.getElementById('workout-date').valueAsDate = new Date();
+      loadActiveWorkoutDraft();
       renderPresetDropdown();
       renderActiveWorkout();
       renderExerciseDB();
@@ -468,6 +470,37 @@
 
     function saveToStorage() {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(db));
+    }
+
+    function saveActiveWorkoutDraft() {
+      const dateVal = document.getElementById('workout-date').value;
+      const draftData = {
+        date: dateVal,
+        exercises: activeWorkoutExercises
+      };
+      localStorage.setItem(DRAFT_KEY, JSON.stringify(draftData));
+    }
+
+    function loadActiveWorkoutDraft() {
+      const draft = localStorage.getItem(DRAFT_KEY);
+      if (draft) {
+        try {
+          const parsed = JSON.parse(draft);
+          if (parsed.date) document.getElementById('workout-date').value = parsed.date;
+          if (Array.isArray(parsed.exercises)) {
+            activeWorkoutExercises = parsed.exercises.map(ex => ({
+              ...ex,
+              completed: !!ex.completed
+            }));
+          }
+        } catch(e) {
+          console.error("Błąd odczytu szkicu treningu:", e);
+        }
+      }
+    }
+
+    function clearActiveWorkoutDraft() {
+      localStorage.removeItem(DRAFT_KEY);
     }
 
     function loadFromStorage() {
@@ -658,6 +691,7 @@
           addExerciseToCurrentWorkout(exDb);
         }
       });
+      saveActiveWorkoutDraft();
       renderActiveWorkout();
     }
 
@@ -693,7 +727,8 @@
         loadType: exDb.loadType,
         muscle: exDb.muscle,
         targetReps: initialTargetReps,
-        sets: initialSets
+        sets: initialSets,
+        completed: false
       });
     }
 
@@ -713,6 +748,7 @@
       const temp = activeWorkoutExercises[index];
       activeWorkoutExercises[index] = activeWorkoutExercises[index - 1];
       activeWorkoutExercises[index - 1] = temp;
+      saveActiveWorkoutDraft();
       renderActiveWorkout();
     }
 
@@ -721,6 +757,33 @@
       const temp = activeWorkoutExercises[index];
       activeWorkoutExercises[index] = activeWorkoutExercises[index + 1];
       activeWorkoutExercises[index + 1] = temp;
+      saveActiveWorkoutDraft();
+      renderActiveWorkout();
+    }
+
+    function toggleExerciseComplete(exIdx) {
+      const ex = activeWorkoutExercises[exIdx];
+      if (!ex) return;
+
+      if (!ex.completed) {
+        // Weryfikacja uzupełnienia wszystkich serii
+        const isAllFilled = ex.sets.length > 0 && ex.sets.every(s => {
+          const w = s.weight !== '' ? parseFloat(s.weight) : s.defaultWeight;
+          const r = s.reps !== '' ? parseInt(s.reps) : s.defaultReps;
+          return w !== undefined && w !== null && !isNaN(w) && w >= 0 &&
+                 r !== undefined && r !== null && !isNaN(r) && r > 0;
+        });
+
+        if (!isAllFilled) {
+          alert("Wypełnij obciążenie i powtórzenia dla wszystkich serii w tym ćwiczeniu przed oznaczeniem jako gotowe!");
+          return;
+        }
+        ex.completed = true;
+      } else {
+        ex.completed = false;
+      }
+
+      saveActiveWorkoutDraft();
       renderActiveWorkout();
     }
 
@@ -737,17 +800,25 @@
       }
 
       container.innerHTML = activeWorkoutExercises.map((ex, exIndex) => {
+        const isCompleted = !!ex.completed;
         const exTotalVolume = ex.sets.reduce((acc, s) => {
           const w = s.weight !== '' ? parseFloat(s.weight) : (s.defaultWeight || 0);
           const r = s.reps !== '' ? parseInt(s.reps) : (s.defaultReps || 0);
           return acc + (w * r);
         }, 0);
 
+        const cardBgClass = isCompleted 
+          ? "bg-emerald-950/40 border-emerald-800/80 shadow-lg" 
+          : "bg-slate-950 border-slate-800";
+
         return `
-          <div class="bg-slate-950 border border-slate-800 rounded-xl p-4 space-y-3" id="ex-card-${exIndex}">
+          <div class="${cardBgClass} border rounded-xl p-4 space-y-3 transition-colors duration-200" id="ex-card-${exIndex}">
             <div class="flex justify-between items-start">
               <div>
-                <h4 class="font-bold text-base text-slate-100">${ex.name}</h4>
+                <h4 class="font-bold text-base text-slate-100">
+                  <span class="text-indigo-400 font-mono mr-1">${exIndex + 1}.</span>${ex.name}
+                  ${isCompleted ? '<span class="ml-2 text-xs text-emerald-400 font-semibold">(Gotowe)</span>' : ''}
+                </h4>
                 <div class="flex flex-wrap gap-2 mt-1">
                   <span class="text-[10px] bg-indigo-950 text-indigo-300 border border-indigo-800 px-2 py-0.5 rounded-full">${ex.muscle}</span>
                   <span class="text-[10px] bg-slate-800 text-slate-400 px-2 py-0.5 rounded-full">${ex.type}</span>
@@ -755,13 +826,13 @@
                 </div>
               </div>
               <div class="flex items-center gap-1.5">
-                <button onclick="moveExerciseUp(${exIndex})" ${exIndex === 0 ? 'disabled' : ''} class="text-slate-300 hover:text-white disabled:opacity-30 disabled:hover:text-slate-300 text-xs px-2 py-1 rounded bg-slate-900 border border-slate-800 transition" title="Przesuń w górę">
+                <button onclick="moveExerciseUp(${exIndex})" ${exIndex === 0 || isCompleted ? 'disabled' : ''} class="text-slate-300 hover:text-white disabled:opacity-30 disabled:hover:text-slate-300 text-xs px-2 py-1 rounded bg-slate-900 border border-slate-800 transition" title="Przesuń w górę">
                   ↑
                 </button>
-                <button onclick="moveExerciseDown(${exIndex})" ${exIndex === activeWorkoutExercises.length - 1 ? 'disabled' : ''} class="text-slate-300 hover:text-white disabled:opacity-30 disabled:hover:text-slate-300 text-xs px-2 py-1 rounded bg-slate-900 border border-slate-800 transition" title="Przesuń w dół">
+                <button onclick="moveExerciseDown(${exIndex})" ${exIndex === activeWorkoutExercises.length - 1 || isCompleted ? 'disabled' : ''} class="text-slate-300 hover:text-white disabled:opacity-30 disabled:hover:text-slate-300 text-xs px-2 py-1 rounded bg-slate-900 border border-slate-800 transition" title="Przesuń w dół">
                   ↓
                 </button>
-                <button onclick="removeExerciseFromWorkout(${exIndex})" class="text-red-400 hover:text-red-300 text-xs px-2 py-1 rounded bg-red-950/40 border border-red-900/50">
+                <button onclick="removeExerciseFromWorkout(${exIndex})" ${isCompleted ? 'disabled' : ''} class="text-red-400 hover:text-red-300 disabled:opacity-30 text-xs px-2 py-1 rounded bg-red-950/40 border border-red-900/50">
                   Usuń
                 </button>
               </div>
@@ -789,24 +860,27 @@
                     <div class="col-span-2 text-center font-bold text-slate-400">#${setIndex + 1}</div>
                     <div class="col-span-3">
                       <input type="number" step="0.5" value="${set.weight}" placeholder="${set.defaultWeight !== undefined ? set.defaultWeight : 0}" 
+                        ${isCompleted ? 'disabled' : ''}
                         onchange="updateSetVal(${exIndex}, ${setIndex}, 'weight', this.value, this)"
-                        class="w-full bg-slate-900 border border-slate-700 text-center rounded px-2 py-1 text-slate-100 placeholder-slate-500 focus:outline-none focus:border-brand-500">
+                        class="w-full bg-slate-900 border border-slate-700 text-center rounded px-2 py-1 text-slate-100 placeholder-slate-500 focus:outline-none focus:border-brand-500 disabled:opacity-50">
                     </div>
                     <div class="col-span-2">
                       <input type="number" value="${ex.targetReps !== undefined ? ex.targetReps : 10}" placeholder="10" 
+                        ${isCompleted ? 'disabled' : ''}
                         onchange="updateTargetReps(${exIndex}, this.value)"
-                        class="w-full bg-slate-900 border border-amber-500/50 text-amber-300 text-center rounded px-2 py-1 focus:outline-none focus:border-amber-400">
+                        class="w-full bg-slate-900 border border-amber-500/50 text-amber-300 text-center rounded px-2 py-1 focus:outline-none focus:border-amber-400 disabled:opacity-50">
                     </div>
                     <div class="col-span-2">
                       <input type="number" value="${set.reps}" placeholder="${set.defaultReps !== undefined ? set.defaultReps : 0}" 
+                        ${isCompleted ? 'disabled' : ''}
                         onchange="updateSetVal(${exIndex}, ${setIndex}, 'reps', this.value, this)"
-                        class="w-full bg-slate-900 border border-slate-700 text-center rounded px-2 py-1 text-slate-100 placeholder-slate-500 focus:outline-none focus:border-brand-500">
+                        class="w-full bg-slate-900 border border-slate-700 text-center rounded px-2 py-1 text-slate-100 placeholder-slate-500 focus:outline-none focus:border-brand-500 disabled:opacity-50">
                     </div>
                     <div class="col-span-2 text-center font-mono text-xs text-indigo-400 font-semibold" id="set-vol-${exIndex}-${setIndex}">
                       ${setVol} kg
                     </div>
                     <div class="col-span-1 text-right">
-                      <button onclick="removeSet(${exIndex}, ${setIndex})" class="text-slate-500 hover:text-red-400 font-bold px-1">✕</button>
+                      <button onclick="removeSet(${exIndex}, ${setIndex})" ${isCompleted ? 'disabled' : ''} class="text-slate-500 hover:text-red-400 disabled:opacity-30 font-bold px-1">✕</button>
                     </div>
                   </div>
                 `;
@@ -814,9 +888,20 @@
             </div>
 
             <div class="flex justify-between items-center pt-3 border-t border-slate-800/60 text-xs">
-              <button onclick="addSet(${exIndex})" class="text-brand-400 hover:text-brand-300 font-medium">
-                + Dodaj serię
-              </button>
+              <div class="flex items-center gap-3">
+                <button onclick="addSet(${exIndex})" ${isCompleted ? 'disabled' : ''} class="text-brand-400 hover:text-brand-300 disabled:opacity-30 font-medium">
+                  + Dodaj serię
+                </button>
+                ${isCompleted ? `
+                  <button onclick="toggleExerciseComplete(${exIndex})" class="bg-amber-600/30 hover:bg-amber-600/50 text-amber-300 border border-amber-500/50 px-3 py-1 rounded-lg font-semibold transition">
+                    ✏️ Popraw
+                  </button>
+                ` : `
+                  <button onclick="toggleExerciseComplete(${exIndex})" class="bg-emerald-600 hover:bg-emerald-500 text-white px-3 py-1 rounded-lg font-semibold transition shadow">
+                    ✓ Gotowe
+                  </button>
+                `}
+              </div>
               <div class="text-slate-400">
                 Suma ćwiczenia: <span class="font-bold text-indigo-300 font-mono" id="ex-total-vol-${exIndex}">${exTotalVolume} kg</span>
               </div>
@@ -829,10 +914,12 @@
     function updateTargetReps(exIdx, val) {
       const parsedVal = parseInt(val);
       activeWorkoutExercises[exIdx].targetReps = isNaN(parsedVal) ? 10 : parsedVal;
+      saveActiveWorkoutDraft();
     }
 
     function updateSetVal(exIdx, setIdx, field, val, inputEl) {
       activeWorkoutExercises[exIdx].sets[setIdx][field] = val;
+      saveActiveWorkoutDraft();
       
       const set = activeWorkoutExercises[exIdx].sets[setIdx];
       const effectiveWeight = set.weight !== '' ? parseFloat(set.weight) : (set.defaultWeight || 0);
@@ -868,16 +955,19 @@
       }
 
       sets.push({ weight: '', reps: '', defaultWeight: defaultW, defaultReps: defaultR });
+      saveActiveWorkoutDraft();
       renderActiveWorkout();
     }
 
     function removeSet(exIdx, setIdx) {
       activeWorkoutExercises[exIdx].sets.splice(setIdx, 1);
+      saveActiveWorkoutDraft();
       renderActiveWorkout();
     }
 
     function removeExerciseFromWorkout(exIdx) {
       activeWorkoutExercises.splice(exIdx, 1);
+      saveActiveWorkoutDraft();
       renderActiveWorkout();
     }
 
@@ -930,6 +1020,7 @@
 
       db.logs.push(workoutLog);
       saveToStorage();
+      clearActiveWorkoutDraft();
 
       alert("Trening został pomyślnie zapisany!");
       activeWorkoutExercises = [];
@@ -1039,6 +1130,7 @@
 
       if (selectExerciseContext === 'workout') {
         addExerciseToCurrentWorkout(exDb);
+        saveActiveWorkoutDraft();
         renderActiveWorkout();
       } else if (selectExerciseContext === 'history' && editingHistoryWorkout) {
         editingHistoryWorkout.exercises.push({
@@ -1655,13 +1747,9 @@
               }).join('')}
             </div>
 
-            <div class="flex justify-between items-center pt-2 border-t border-slate-800/60 text-xs">
-              <button onclick="addHistorySet(${exIdx})" class="text-brand-400 hover:text-brand-300">
-                + Dodaj serię
-              </button>
-              <div class="text-slate-400 text-[11px]">
-                Suma: <span class="font-bold text-indigo-300 font-mono">${exVol} kg</span>
-              </div>
+            <div class="flex justify-between items-center pt-2 text-xs">
+              <button onclick="addHistorySet(${exIdx})" class="text-brand-400 hover:text-brand-300 font-medium">+ Dodaj serię</button>
+              <span class="text-slate-400">Suma: <strong class="text-indigo-300 font-mono">${exVol} kg</strong></span>
             </div>
           </div>
         `;
@@ -1676,18 +1764,21 @@
 
     function updateHistorySetVal(exIdx, setIdx, field, val) {
       if (!editingHistoryWorkout) return;
-      editingHistoryWorkout.exercises[exIdx].sets[setIdx][field] = val;
+      const ex = editingHistoryWorkout.exercises[exIdx];
+      if (ex && ex.sets[setIdx]) {
+        ex.sets[setIdx][field] = val !== '' ? parseFloat(val) : 0;
+      }
     }
 
     function addHistorySet(exIdx) {
       if (!editingHistoryWorkout) return;
-      const sets = editingHistoryWorkout.exercises[exIdx].sets;
+      const ex = editingHistoryWorkout.exercises[exIdx];
       let lastW = 0, lastR = 0;
-      if (sets.length > 0) {
-        lastW = sets[sets.length - 1].weight || 0;
-        lastR = sets[sets.length - 1].reps || 0;
+      if (ex.sets.length > 0) {
+        lastW = ex.sets[ex.sets.length - 1].weight || 0;
+        lastR = ex.sets[ex.sets.length - 1].reps || 0;
       }
-      sets.push({ weight: lastW, reps: lastR });
+      ex.sets.push({ weight: lastW, reps: lastR });
       renderEditHistoryModal();
     }
 
@@ -1705,28 +1796,16 @@
 
     function saveEditedHistoryWorkout() {
       if (!editingHistoryWorkout) return;
-
-      const dateVal = document.getElementById('edit-history-date').value;
-      if (!dateVal) {
-        alert("Wprowadź prawidłową datę!");
-        return;
-      }
-
-      editingHistoryWorkout.date = dateVal;
-      editingHistoryWorkout.exercises.forEach(ex => {
-        ex.sets.forEach(s => {
-          s.weight = parseFloat(s.weight) || 0;
-          s.reps = parseInt(s.reps) || 0;
-        });
-      });
-
-      const logIndex = db.logs.findIndex(l => l.id === editingHistoryWorkout.id);
-      if (logIndex !== -1) {
-        db.logs[logIndex] = editingHistoryWorkout;
+      
+      editingHistoryWorkout.date = document.getElementById('edit-history-date').value;
+      
+      const idx = db.logs.findIndex(l => l.id === editingHistoryWorkout.id);
+      if (idx !== -1) {
+        db.logs[idx] = editingHistoryWorkout;
         saveToStorage();
-        alert("Zmiany w historii zostały zapisane!");
         closeModal('modal-edit-history');
         updateAnalytics();
+        alert("Zmiany zostały zapisane!");
       }
     }
   </script>
