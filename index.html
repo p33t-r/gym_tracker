@@ -131,19 +131,22 @@
       </div>
 
       <!-- Wykresy -->
-      <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <!-- Wykres Tonażu Sumarycznego -->
-        <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 sm:p-6 flex flex-col justify-between">
-          <div>
-            <h3 class="text-base font-bold text-slate-200 mb-1">Całkowity Tonaż (kg)</h3>
-            <p class="text-xs text-slate-400 mb-4">Skumulowana objętość w czasie według grup lub ćwiczeń</p>
-            <div class="relative h-64 sm:h-80">
-              <canvas id="tonnageChart"></canvas>
-            </div>
-          </div>
-          <!-- Zestawienie tonażu i udziału powtórzeń -->
-          <div id="tonnageProgressText" class="mt-4 pt-3 border-t border-slate-800 text-xs text-slate-300 font-medium"></div>
-        </div>
+		<div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+		  <!-- Wykres Tonażu Sumarycznego -->
+		  <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 sm:p-6 flex flex-col justify-between">
+			<div>
+			  <h3 class="text-base font-bold text-slate-200 mb-1">Całkowity Tonaż (kg)</h3>
+			  <p class="text-xs text-slate-400 mb-4">Skumulowana objętość w czasie według grup lub ćwiczeń</p>
+			  
+			  <!-- Sztywna przestrzeń przeznaczona WYŁĄCZNIE na sam słupkowy wykres -->
+			  <div class="relative h-64 sm:h-80 w-full min-h-[250px]">
+				<canvas id="tonnageChart"></canvas>
+			  </div>
+			</div>
+			
+			<!-- Dedykowany kontener na tekstową legendę z możliwością przewijania (scroll) -->
+			<div id="tonnageProgressText" class="mt-4 pt-3 border-t border-slate-800 text-xs text-slate-300 font-medium max-h-36 overflow-y-auto pr-1"></div>
+		  </div>
 
         <!-- Wykres Progresu w Ćwiczeniu -->
         <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 sm:p-6 flex flex-col justify-between">
@@ -1356,114 +1359,140 @@
     }
 
     function renderTonnageChart(logs, muscleFilter, exFilter) {
-      const ctx = document.getElementById('tonnageChart').getContext('2d');
-      const progressTextEl = document.getElementById('tonnageProgressText');
-      if (tonnageChartInstance) tonnageChartInstance.destroy();
+	  const ctx = document.getElementById('tonnageChart').getContext('2d');
+	  const progressTextEl = document.getElementById('tonnageProgressText');
+	  if (tonnageChartInstance) tonnageChartInstance.destroy();
 
-      const dateSet = new Set();
-      const stackData = {};
-      const stackKeysSet = new Set();
+	  const dateSet = new Set();
+	  const stackData = {};
+	  const stackKeysSet = new Set();
 
-      const stackTonnage = {};
-      const stackReps = {};
-      let grandTotalReps = 0;
+	  const stackTonnage = {};
+	  const stackReps = {};
+	  let grandTotalReps = 0;
 
-      logs.forEach(log => {
-        log.exercises.forEach(ex => {
-          const muscle = getExerciseMuscle(ex);
-          if (muscleFilter !== 'all' && muscle !== muscleFilter) return;
-          if (exFilter !== 'all' && ex.exerciseId !== exFilter) return;
+	  logs.forEach(log => {
+		log.exercises.forEach(ex => {
+		  const muscle = getExerciseMuscle(ex);
+		  if (muscleFilter !== 'all' && muscle !== muscleFilter) return;
+		  if (exFilter !== 'all' && ex.exerciseId !== exFilter) return;
 
-          const exVol = ex.sets.reduce((sum, s) => sum + ((parseFloat(s.weight)||0) * (parseInt(s.reps)||0)), 0);
-          const exReps = ex.sets.reduce((sum, s) => sum + (parseInt(s.reps)||0), 0);
-          if (exVol <= 0 && exReps <= 0) return;
+		  const exVol = ex.sets.reduce((sum, s) => sum + ((parseFloat(s.weight)||0) * (parseInt(s.reps)||0)), 0);
+		  const exReps = ex.sets.reduce((sum, s) => sum + (parseInt(s.reps)||0), 0);
+		  if (exVol <= 0 && exReps <= 0) return;
 
-          dateSet.add(log.date);
+		  dateSet.add(log.date);
 
-          let stackKey = (muscleFilter === 'all') ? muscle : ex.name;
+		  let stackKey = (muscleFilter === 'all') ? muscle : ex.name;
 
-          if (!stackData[stackKey]) stackData[stackKey] = {};
-          stackData[stackKey][log.date] = (stackData[stackKey][log.date] || 0) + exVol;
-          stackKeysSet.add(stackKey);
+		  if (!stackData[stackKey]) stackData[stackKey] = {};
+		  stackData[stackKey][log.date] = (stackData[stackKey][log.date] || 0) + exVol;
+		  stackKeysSet.add(stackKey);
 
-          stackTonnage[stackKey] = (stackTonnage[stackKey] || 0) + exVol;
-          stackReps[stackKey] = (stackReps[stackKey] || 0) + exReps;
-          grandTotalReps += exReps;
-        });
-      });
+		  stackTonnage[stackKey] = (stackTonnage[stackKey] || 0) + exVol;
+		  stackReps[stackKey] = (stackReps[stackKey] || 0) + exReps;
+		  grandTotalReps += exReps;
+		});
+	  });
 
-      const dates = Array.from(dateSet).sort((a,b) => new Date(a) - new Date(b));
-      const stackKeys = Array.from(stackKeysSet);
+	  const dates = Array.from(dateSet).sort((a,b) => new Date(a) - new Date(b));
+	  const stackKeys = Array.from(stackKeysSet);
 
-      if (stackKeys.length > 0) {
-        let legendHtml = `<div class="flex flex-wrap gap-2 text-xs">`;
-        stackKeys.forEach((key, index) => {
-          const color = STACK_COLORS[index % STACK_COLORS.length];
-          const ton = stackTonnage[key] || 0;
-          const reps = stackReps[key] || 0;
-          const pct = grandTotalReps > 0 ? ((reps / grandTotalReps) * 100).toFixed(1) : '0';
+	  if (stackKeys.length > 0) {
+		let legendHtml = `<div class="flex flex-wrap gap-2 text-xs">`;
+		stackKeys.forEach((key, index) => {
+		  const color = STACK_COLORS[index % STACK_COLORS.length];
+		  const ton = stackTonnage[key] || 0;
+		  const reps = stackReps[key] || 0;
+		  const pct = grandTotalReps > 0 ? ((reps / grandTotalReps) * 100).toFixed(1) : '0';
 
-          legendHtml += `
-            <div class="flex items-center gap-2 bg-slate-950 border border-slate-800 px-3 py-1.5 rounded-xl">
-              <span class="w-2.5 h-2.5 rounded-full shrink-0" style="background-color: ${color}"></span>
-              <span class="font-semibold text-slate-200">${key}:</span>
-              <span class="text-indigo-400 font-mono font-bold">${ton} kg</span>
-              <span class="text-slate-400 text-[11px]">(${pct}% powtórzeń)</span>
-            </div>
-          `;
-        });
-        legendHtml += `</div>`;
-        progressTextEl.innerHTML = legendHtml;
-      } else {
-        progressTextEl.innerHTML = `<span class="text-slate-500">Brak danych w wybranym oknie czasowym.</span>`;
-      }
+		  // Dodano: cursor-pointer, transition oraz onclick do ukrywania serii
+		  legendHtml += `
+			<div id="tonnage-legend-item-${index}" 
+				 onclick="toggleTonnageDataset(${index})" 
+				 class="flex items-center gap-2 bg-slate-950 border border-slate-800 px-3 py-1.5 rounded-xl cursor-pointer select-none transition-all hover:border-slate-700">
+			  <span class="w-2.5 h-2.5 rounded-full shrink-0" style="background-color: ${color}"></span>
+			  <span class="font-semibold text-slate-200">${key}:</span>
+			  <span class="text-indigo-400 font-mono font-bold">${ton} kg</span>
+			  <span class="text-slate-400 text-[11px]">(${pct}% powtórzeń)</span>
+			</div>
+		  `;
+		});
+		legendHtml += `</div>`;
+		progressTextEl.innerHTML = legendHtml;
+	  } else {
+		progressTextEl.innerHTML = `<span class="text-slate-500">Brak danych w wybranym oknie czasowym.</span>`;
+	  }
 
-      const datasets = stackKeys.map((key, index) => {
-        const ton = stackTonnage[key] || 0;
-        const reps = stackReps[key] || 0;
-        const pct = grandTotalReps > 0 ? ((reps / grandTotalReps) * 100).toFixed(1) : '0';
+	  const datasets = stackKeys.map((key, index) => {
+		const ton = stackTonnage[key] || 0;
+		const reps = stackReps[key] || 0;
+		const pct = grandTotalReps > 0 ? ((reps / grandTotalReps) * 100).toFixed(1) : '0';
 
-        return {
-          label: `${key} (${pct}% powt. | ${ton} kg)`,
-          data: dates.map(d => stackData[key][d] || 0),
-          backgroundColor: STACK_COLORS[index % STACK_COLORS.length],
-          borderRadius: 4
-        };
-      });
+		return {
+		  label: `${key} (${pct}% powt. | ${ton} kg)`,
+		  data: dates.map(d => stackData[key][d] || 0),
+		  backgroundColor: STACK_COLORS[index % STACK_COLORS.length],
+		  borderRadius: 4
+		};
+	  });
 
-      tonnageChartInstance = new Chart(ctx, {
-        type: 'bar',
-        data: {
-          labels: dates,
-          datasets: datasets
-        },
-        options: {
-          responsive: true,
-          maintainAspectRatio: false,
-          plugins: {
-            legend: { 
-              display: datasets.length > 0, 
-              position: 'bottom',
-			  maxHeight: 200,
-              labels: { color: '#94a3b8', boxWidth: 12, font: { size: 11 } } 
-            },
-            tooltip: {
-              callbacks: {
-                footer: (tooltipItems) => {
-                  let total = 0;
-                  tooltipItems.forEach(item => { total += item.parsed.y; });
-                  return 'Suma całkowita: ' + total + ' kg';
-                }
-              }
-            }
-          },
-          scales: {
-            x: { stacked: true, ticks: { color: '#94a3b8' }, grid: { color: '#1e293b' } },
-            y: { stacked: true, ticks: { color: '#94a3b8' }, grid: { color: '#1e293b' } }
-          }
-        }
-      });
-    }
+	  tonnageChartInstance = new Chart(ctx, {
+		type: 'bar',
+		data: {
+		  labels: dates,
+		  datasets: datasets
+		},
+		options: {
+		  responsive: true,
+		  maintainAspectRatio: false,
+		  plugins: {
+			legend: {
+			  display: false // Wyłączamy wbudowaną legendę, korzystamy z własnych klikalnych kafelków
+			},
+			tooltip: {
+			  callbacks: {
+				footer: (tooltipItems) => {
+				  let total = 0;
+				  tooltipItems.forEach(item => { total += item.parsed.y; });
+				  return 'Suma całkowita: ' + total + ' kg';
+				}
+			  }
+			}
+		  },
+		  scales: {
+			x: { stacked: true, ticks: { color: '#94a3b8' }, grid: { color: '#1e293b' } },
+			y: { stacked: true, ticks: { color: '#94a3b8' }, grid: { color: '#1e293b' } }
+		  }
+		}
+	  });
+	}
+	
+	function toggleTonnageDataset(index) {
+	  if (!tonnageChartInstance) return;
+
+	  // Sprawdzamy stan widoczności w Chart.js
+	  const isVisible = tonnageChartInstance.isDatasetVisible(index);
+	  
+	  if (isVisible) {
+		tonnageChartInstance.hide(index);
+	  } else {
+		tonnageChartInstance.show(index);
+	  }
+
+	  // Wymuszamy przerysowanie wykresu
+	  tonnageChartInstance.update();
+
+	  // Aktualizujemy styl wizualny kafelka (przekreślenie i osłabienie przezroczystości gdy jest ukryty)
+	  const el = document.getElementById(`tonnage-legend-item-${index}`);
+	  if (el) {
+		if (isVisible) {
+		  el.classList.add('opacity-40', 'line-through');
+		} else {
+		  el.classList.remove('opacity-40', 'line-through');
+		}
+	  }
+	}
 
     function renderExerciseProgressChart(logs, exFilter) {
       const ctx = document.getElementById('exerciseProgressChart').getContext('2d');
